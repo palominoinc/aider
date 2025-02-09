@@ -11,19 +11,21 @@ import time
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Optional, Union
-
 import json5
 import yaml
 from PIL import Image
-
 from aider.dump import dump  # noqa: F401
 from aider.llm import litellm
 from aider.sendchat import ensure_alternating_roles, sanity_check_messages
 
+# Additional imports for session tracking
+from opentelemetry import trace
+from openinference.instrumentation import using_session
+from openinference.semconv.trace import SpanAttributes
+import uuid
+
 RETRY_TIMEOUT = 60
-
 request_timeout = 600
-
 DEFAULT_MODEL_NAME = "gpt-4o"
 ANTHROPIC_BETA_HEADER = "prompt-caching-2024-07-31,pdfs-2024-09-25"
 
@@ -57,7 +59,6 @@ gpt-3.5-turbo-0125
 gpt-3.5-turbo-16k
 gpt-3.5-turbo-16k-0613
 """
-
 OPENAI_MODELS = [ln.strip() for ln in OPENAI_MODELS.splitlines() if ln.strip()]
 
 ANTHROPIC_MODELS = """
@@ -70,7 +71,6 @@ claude-3-sonnet-20240229
 claude-3-5-sonnet-20240620
 claude-3-5-sonnet-20241022
 """
-
 ANTHROPIC_MODELS = [ln.strip() for ln in ANTHROPIC_MODELS.splitlines() if ln.strip()]
 
 # Mapping of model aliases to their canonical names
@@ -91,12 +91,10 @@ MODEL_ALIASES = {
     "r1": "deepseek/deepseek-reasoner",
     "flash": "gemini/gemini-2.0-flash-exp",
 }
+
 # Model metadata loaded from resources and user's files.
-
-
 @dataclass
 class ModelSettings:
-    # Model class needs to have each of these as well
     name: str
     edit_format: str = "whole"
     weak_model_name: Optional[str] = None
@@ -116,14 +114,12 @@ class ModelSettings:
     remove_reasoning: Optional[str] = None
     system_prompt_prefix: Optional[str] = None
 
-
 # Load model settings from package resource
 MODEL_SETTINGS = []
 with importlib.resources.open_text("aider.resources", "model-settings.yml") as f:
     model_settings_list = yaml.safe_load(f)
     for model_settings_dict in model_settings_list:
         MODEL_SETTINGS.append(ModelSettings(**model_settings_dict))
-
 
 class ModelInfoManager:
     MODEL_INFO_URL = (
@@ -152,7 +148,6 @@ class ModelInfoManager:
     def _update_cache(self):
         try:
             import requests
-
             response = requests.get(self.MODEL_INFO_URL, timeout=5)
             if response.status_code == 200:
                 self.content = response.json()
@@ -172,28 +167,22 @@ class ModelInfoManager:
         data = self.local_model_metadata.get(model)
         if data:
             return data
-
         if not self.content:
             self._update_cache()
-
         if not self.content:
             return dict()
-
         info = self.content.get(model, dict())
         if info:
             return info
-
         pieces = model.split("/")
         if len(pieces) == 2:
             info = self.content.get(pieces[1])
             if info and info.get("litellm_provider") == pieces[0]:
                 return info
-
         return dict()
 
     def get_model_info(self, model):
         cached_info = self.get_model_from_cached_json_db(model)
-
         litellm_info = None
         if litellm._lazy_module or not cached_info:
             try:
@@ -201,54 +190,46 @@ class ModelInfoManager:
             except Exception as ex:
                 if "model_prices_and_context_window.json" not in str(ex):
                     print(str(ex))
-
         if litellm_info:
             return litellm_info
-
         return cached_info
 
-
 model_info_manager = ModelInfoManager()
-
 
 class Model(ModelSettings):
     def __init__(self, model, weak_model=None, editor_model=None, editor_edit_format=None):
         # Map any alias to its canonical name
         model = MODEL_ALIASES.get(model, model)
-
         self.name = model
-
         self.max_chat_history_tokens = 1024
         self.weak_model = None
         self.editor_model = None
-
         # Find the extra settings
         self.extra_model_settings = next(
             (ms for ms in MODEL_SETTINGS if ms.name == "aider/extra_params"), None
         )
-
         self.info = self.get_model_info(model)
-
         # Are all needed keys/params available?
         res = self.validate_environment()
         self.missing_keys = res.get("missing_keys")
         self.keys_in_environment = res.get("keys_in_environment")
-
         max_input_tokens = self.info.get("max_input_tokens") or 0
         # Calculate max_chat_history_tokens as 1/16th of max_input_tokens,
         # with minimum 1k and maximum 8k
         self.max_chat_history_tokens = min(max(max_input_tokens / 16, 1024), 8192)
-
         self.configure_model_settings(model)
         if weak_model is False:
             self.weak_model_name = None
         else:
             self.get_weak_model(weak_model)
-
         if editor_model is False:
             self.editor_model_name = None
         else:
             self.get_editor_model(editor_model, editor_edit_format)
+
+        # SESSION TRACKING: assign a unique session id and tracer
+        self.session_id = str(uuid.uuid4())
+        self.tracer = trace.get_tracer(__name__)
 
     def get_model_info(self, model):
         return model_info_manager.get_model_info(model)
@@ -263,24 +244,21 @@ class Model(ModelSettings):
         # Look for exact model match
         exact_match = False
         for ms in MODEL_SETTINGS:
-            # direct match, or match "provider/<model>"
+            # direct match, or match "provider/"
             if model == ms.name:
                 self._copy_fields(ms)
                 exact_match = True
-                break  # Continue to apply overrides
-
+                break
+        # Continue to apply overrides
         model = model.lower()
-
         # If no exact match, try generic settings
         if not exact_match:
             self.apply_generic_model_settings(model)
-
         # Apply override settings last if they exist
         if self.extra_model_settings and self.extra_model_settings.extra_params:
             # Initialize extra_params if it doesn't exist
             if not self.extra_params:
                 self.extra_params = {}
-
             # Deep merge the extra_params dicts
             for key, value in self.extra_model_settings.extra_params.items():
                 if isinstance(value, dict) and isinstance(self.extra_params.get(key), dict):
@@ -296,79 +274,67 @@ class Model(ModelSettings):
             self.use_repo_map = True
             self.use_temperature = False
             self.system_prompt_prefix = "Formatting re-enabled. "
-            return  # <--
-
+            return
         if "/o1-mini" in model:
             self.use_repo_map = True
             self.use_temperature = False
             self.use_system_prompt = False
-            return  # <--
-
+            return
         if "/o1-preview" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.use_temperature = False
             self.use_system_prompt = False
-            return  # <--
-
+            return
         if "/o1" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.use_temperature = False
             self.streaming = False
             self.system_prompt_prefix = "Formatting re-enabled. "
-            return  # <--
-
+            return
         if "deepseek" in model and "v3" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.reminder = "sys"
             self.examples_as_sys_msg = True
-            return  # <--
-
+            return
         if "deepseek" in model and ("r1" in model or "reasoning" in model):
             self.edit_format = "diff"
             self.use_repo_map = True
             self.examples_as_sys_msg = True
             self.use_temperature = False
             self.remove_reasoning = "think"
-            return  # <--
-
+            return
         if ("llama3" in model or "llama-3" in model) and "70b" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.send_undo_reply = True
             self.examples_as_sys_msg = True
-            return  # <--
-
+            return
         if "gpt-4-turbo" in model or ("gpt-4-" in model and "-preview" in model):
             self.edit_format = "udiff"
             self.use_repo_map = True
             self.send_undo_reply = True
-            return  # <--
-
+            return
         if "gpt-4" in model or "claude-3-opus" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.send_undo_reply = True
-            return  # <--
-
+            return
         if "gpt-3.5" in model or "gpt-4" in model:
             self.reminder = "sys"
-            return  # <--
-
+            return
         if "3.5-sonnet" in model or "3-5-sonnet" in model:
             self.edit_format = "diff"
             self.use_repo_map = True
             self.examples_as_sys_msg = True
             self.reminder = "user"
-            return  # <--
-
+            return
         if model.startswith("o1-") or "/o1-" in model:
             self.use_system_prompt = False
             self.use_temperature = False
-            return  # <--
-
+            return
         if (
             "qwen" in model
             and "coder" in model
@@ -378,12 +344,11 @@ class Model(ModelSettings):
             self.edit_format = "diff"
             self.editor_edit_format = "editor-diff"
             self.use_repo_map = True
-            return  # <--
-
+            return
         # use the defaults
         if self.edit_format == "diff":
             self.use_repo_map = True
-            return  # <--
+            return
 
     def __str__(self):
         return self.name
@@ -392,15 +357,12 @@ class Model(ModelSettings):
         # If weak_model_name is provided, override the model settings
         if provided_weak_model_name:
             self.weak_model_name = provided_weak_model_name
-
         if not self.weak_model_name:
             self.weak_model = self
             return
-
         if self.weak_model_name == self.name:
             self.weak_model = self
             return
-
         self.weak_model = Model(
             self.weak_model_name,
             weak_model=False,
@@ -416,7 +378,6 @@ class Model(ModelSettings):
             self.editor_model_name = provided_editor_model_name
         if editor_edit_format:
             self.editor_edit_format = editor_edit_format
-
         if not self.editor_model_name or self.editor_model_name == self.name:
             self.editor_model = self
         else:
@@ -424,10 +385,8 @@ class Model(ModelSettings):
                 self.editor_model_name,
                 editor_model=False,
             )
-
         if not self.editor_edit_format:
             self.editor_edit_format = self.editor_model.edit_format
-
         return self.editor_model
 
     def tokenizer(self, text):
@@ -440,15 +399,12 @@ class Model(ModelSettings):
             except Exception as err:
                 print(f"Unable to count tokens: {err}")
                 return 0
-
         if not self.tokenizer:
             return
-
         if type(messages) is str:
             msgs = messages
         else:
             msgs = json.dumps(messages)
-
         try:
             return len(self.tokenizer(msgs))
         except Exception as err:
@@ -463,25 +419,21 @@ class Model(ModelSettings):
         :return: The token cost for the image.
         """
         width, height = self.get_image_size(fname)
-
         # If the image is larger than 2048 in any dimension, scale it down to fit within 2048x2048
         max_dimension = max(width, height)
         if max_dimension > 2048:
             scale_factor = 2048 / max_dimension
             width = int(width * scale_factor)
             height = int(height * scale_factor)
-
         # Scale the image such that the shortest side is 768 pixels long
         min_dimension = min(width, height)
         scale_factor = 768 / min_dimension
         width = int(width * scale_factor)
         height = int(height * scale_factor)
-
         # Calculate the number of 512x512 tiles needed to cover the image
         tiles_width = math.ceil(width / 512)
         tiles_height = math.ceil(height / 512)
         num_tiles = tiles_width * tiles_height
-
         # Each tile costs 170 tokens, and there's an additional fixed cost of 85 tokens
         token_cost = num_tiles * 170 + 85
         return token_cost
@@ -497,15 +449,12 @@ class Model(ModelSettings):
 
     def fast_validate_environment(self):
         """Fast path for common models. Avoids forcing litellm import."""
-
         model = self.name
-
         pieces = model.split("/")
         if len(pieces) > 1:
             provider = pieces[0]
         else:
             provider = None
-
         keymap = dict(
             openrouter="OPENROUTER_API_KEY",
             openai="OPENAI_API_KEY",
@@ -522,24 +471,20 @@ class Model(ModelSettings):
             var = "ANTHROPIC_API_KEY"
         else:
             var = keymap.get(provider)
-
         if var and os.environ.get(var):
             return dict(keys_in_environment=[var], missing_keys=[])
-
+    
     def validate_environment(self):
         res = self.fast_validate_environment()
         if res:
             return res
-
         # https://github.com/BerriAI/litellm/issues/3190
-
         model = self.name
         res = litellm.validate_environment(model)
         if res["keys_in_environment"]:
             return res
         if res["missing_keys"]:
             return res
-
         provider = self.info.get("litellm_provider", "").lower()
         if provider == "cohere_chat":
             return validate_variables(["COHERE_API_KEY"])
@@ -547,7 +492,6 @@ class Model(ModelSettings):
             return validate_variables(["GEMINI_API_KEY"])
         if provider == "groq":
             return validate_variables(["GROQ_API_KEY"])
-
         return res
 
     def get_repo_map_tokens(self):
@@ -571,25 +515,20 @@ class Model(ModelSettings):
     def send_completion(self, messages, functions, stream, temperature=None):
         if os.environ.get("AIDER_SANITY_CHECK_TURNS"):
             sanity_check_messages(messages)
-
         if self.is_deepseek_r1():
             messages = ensure_alternating_roles(messages)
-
         kwargs = dict(
             model=self.name,
             messages=messages,
             stream=stream,
         )
-
         if self.use_temperature is not False:
             if temperature is None:
                 if isinstance(self.use_temperature, bool):
                     temperature = 0
                 else:
                     temperature = float(self.use_temperature)
-
             kwargs["temperature"] = temperature
-
         if functions is not None:
             function = functions[0]
             kwargs["tools"] = [dict(type="function", function=function)]
@@ -599,100 +538,113 @@ class Model(ModelSettings):
         if self.is_ollama() and "num_ctx" not in kwargs:
             num_ctx = int(self.token_count(messages) * 1.25) + 8192
             kwargs["num_ctx"] = num_ctx
+
         key = json.dumps(kwargs, sort_keys=True).encode()
-
-        # dump(kwargs)
-
         hash_object = hashlib.sha1(key)
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = request_timeout
-        res = litellm.completion(**kwargs)
-        return hash_object, res
+
+        # Create a parent span for the interaction
+        with self.tracer.start_as_current_span(
+            name="aider_chat",
+            attributes={
+                SpanAttributes.OPENINFERENCE_SPAN_KIND: "chain",
+                SpanAttributes.SESSION_ID: self.session_id
+            }
+        ) as parent_span:
+            parent_span.set_attribute(SpanAttributes.INPUT_VALUE, str(messages))
+            try:
+                with using_session(self.session_id):
+                    if "timeout" not in kwargs:
+                        kwargs["timeout"] = request_timeout
+                    res = litellm.completion(**kwargs)
+                if (res and hasattr(res, "choices") and res.choices and 
+                        hasattr(res.choices[0].message, "content")):
+                    parent_span.set_attribute(
+                        SpanAttributes.OUTPUT_VALUE, 
+                        str(res.choices[0].message.content)
+                    )
+                return hash_object, res
+            except Exception as e:
+                parent_span.record_exception(e)
+                raise
 
     def remove_reasoning_content(self, res):
         if not self.remove_reasoning:
             return res
-
         pattern = f"<{self.remove_reasoning}>.*?</{self.remove_reasoning}>"
         res = re.sub(pattern, "", res, flags=re.DOTALL).strip()
         return res
 
     def simple_send_with_retries(self, messages):
         from aider.exceptions import LiteLLMExceptions
-
         litellm_ex = LiteLLMExceptions()
         if "deepseek-reasoner" in self.name:
             messages = ensure_alternating_roles(messages)
         retry_delay = 0.125
-
-        while True:
-            try:
-                kwargs = {
-                    "messages": messages,
-                    "functions": None,
-                    "stream": False,
-                }
-
-                _hash, response = self.send_completion(**kwargs)
-                if not response or not hasattr(response, "choices") or not response.choices:
+        with self.tracer.start_as_current_span(
+            name="aider_retry",
+            attributes={
+                SpanAttributes.OPENINFERENCE_SPAN_KIND: "chain",
+                SpanAttributes.SESSION_ID: self.session_id
+            }
+        ):
+            while True:
+                try:
+                    kwargs = {
+                        "messages": messages,
+                        "functions": None,
+                        "stream": False,
+                    }
+                    _hash, response = self.send_completion(**kwargs)
+                    if not response or not hasattr(response, "choices") or not response.choices:
+                        return None
+                    res = response.choices[0].message.content
+                    return self.remove_reasoning_content(res)
+                except litellm_ex.exceptions_tuple() as err:
+                    ex_info = litellm_ex.get_ex_info(err)
+                    print(str(err))
+                    if ex_info.description:
+                        print(ex_info.description)
+                    should_retry = ex_info.retry
+                    if should_retry:
+                        retry_delay *= 2
+                        if retry_delay > RETRY_TIMEOUT:
+                            should_retry = False
+                    if not should_retry:
+                        return None
+                    print(f"Retrying in {retry_delay:.1f} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                except AttributeError:
                     return None
-                res = response.choices[0].message.content
-                return self.remove_reasoning_content(res)
-
-            except litellm_ex.exceptions_tuple() as err:
-                ex_info = litellm_ex.get_ex_info(err)
-                print(str(err))
-                if ex_info.description:
-                    print(ex_info.description)
-                should_retry = ex_info.retry
-                if should_retry:
-                    retry_delay *= 2
-                    if retry_delay > RETRY_TIMEOUT:
-                        should_retry = False
-                if not should_retry:
-                    return None
-                print(f"Retrying in {retry_delay:.1f} seconds...")
-                time.sleep(retry_delay)
-                continue
-            except AttributeError:
-                return None
-
 
 def register_models(model_settings_fnames):
     files_loaded = []
     for model_settings_fname in model_settings_fnames:
         if not os.path.exists(model_settings_fname):
             continue
-
         if not Path(model_settings_fname).read_text().strip():
             continue
-
         try:
             with open(model_settings_fname, "r") as model_settings_file:
                 model_settings_list = yaml.safe_load(model_settings_file)
-
-            for model_settings_dict in model_settings_list:
-                model_settings = ModelSettings(**model_settings_dict)
-                existing_model_settings = next(
-                    (ms for ms in MODEL_SETTINGS if ms.name == model_settings.name), None
-                )
-
-                if existing_model_settings:
-                    MODEL_SETTINGS.remove(existing_model_settings)
-                MODEL_SETTINGS.append(model_settings)
+                for model_settings_dict in model_settings_list:
+                    model_settings = ModelSettings(**model_settings_dict)
+                    existing_model_settings = next(
+                        (ms for ms in MODEL_SETTINGS if ms.name == model_settings.name), None
+                    )
+                    if existing_model_settings:
+                        MODEL_SETTINGS.remove(existing_model_settings)
+                    MODEL_SETTINGS.append(model_settings)
         except Exception as e:
             raise Exception(f"Error loading model settings from {model_settings_fname}: {e}")
         files_loaded.append(model_settings_fname)
-
     return files_loaded
-
 
 def register_litellm_models(model_fnames):
     files_loaded = []
     for model_fname in model_fnames:
         if not os.path.exists(model_fname):
             continue
-
         try:
             data = Path(model_fname).read_text()
             if not data.strip():
@@ -700,16 +652,12 @@ def register_litellm_models(model_fnames):
             model_def = json5.loads(data)
             if not model_def:
                 continue
-
             # Defer registration with litellm to faster path.
             model_info_manager.local_model_metadata.update(model_def)
         except Exception as e:
             raise Exception(f"Error loading model definition from {model_fname}: {e}")
-
         files_loaded.append(model_fname)
-
     return files_loaded
-
 
 def validate_variables(vars):
     missing = []
@@ -720,14 +668,11 @@ def validate_variables(vars):
         return dict(keys_in_environment=False, missing_keys=missing)
     return dict(keys_in_environment=True, missing_keys=missing)
 
-
 def sanity_check_models(io, main_model):
     problem_main = sanity_check_model(io, main_model)
-
     problem_weak = None
     if main_model.weak_model and main_model.weak_model is not main_model:
         problem_weak = sanity_check_model(io, main_model.weak_model)
-
     problem_editor = None
     if (
         main_model.editor_model
@@ -735,13 +680,10 @@ def sanity_check_models(io, main_model):
         and main_model.editor_model is not main_model.weak_model
     ):
         problem_editor = sanity_check_model(io, main_model.editor_model)
-
     return problem_main or problem_weak or problem_editor
-
 
 def sanity_check_model(io, model):
     show = False
-
     if model.missing_keys:
         show = True
         io.tool_warning(f"Warning: {model} expects these environment variables")
@@ -749,35 +691,27 @@ def sanity_check_model(io, model):
             value = os.environ.get(key, "")
             status = "Set" if value else "Not set"
             io.tool_output(f"- {key}: {status}")
-
         if platform.system() == "Windows":
             io.tool_output(
-                "Note: You may need to restart your terminal or command prompt for `setx` to take"
-                " effect."
+                "Note: You may need to restart your terminal or command prompt for `setx` to take effect."
             )
-
     elif not model.keys_in_environment:
         show = True
         io.tool_warning(f"Warning for {model}: Unknown which environment variables are required.")
-
     if not model.info:
         show = True
         io.tool_warning(
             f"Warning for {model}: Unknown context window size and costs, using sane defaults."
         )
-
         possible_matches = fuzzy_match_models(model.name)
         if possible_matches:
             io.tool_output("Did you mean one of these?")
             for match in possible_matches:
                 io.tool_output(f"- {match}")
-
     return show
-
 
 def fuzzy_match_models(name):
     name = name.lower()
-
     chat_models = set()
     for orig_model, attrs in litellm.model_cost.items():
         model = orig_model.lower()
@@ -787,35 +721,21 @@ def fuzzy_match_models(name):
         if not provider:
             continue
         provider += "/"
-
         if model.startswith(provider):
             fq_model = orig_model
         else:
             fq_model = provider + orig_model
-
         chat_models.add(fq_model)
         chat_models.add(orig_model)
-
     chat_models = sorted(chat_models)
-    # exactly matching model
-    # matching_models = [
-    #    (fq,m) for fq,m in chat_models
-    #    if name == fq or name == m
-    # ]
-    # if matching_models:
-    #    return matching_models
-
     # Check for model names containing the name
     matching_models = [m for m in chat_models if name in m]
     if matching_models:
         return sorted(set(matching_models))
-
     # Check for slight misspellings
     models = set(chat_models)
     matching_models = difflib.get_close_matches(name, models, n=3, cutoff=0.8)
-
     return sorted(set(matching_models))
-
 
 def print_matching_models(io, search):
     matches = fuzzy_match_models(search)
@@ -826,12 +746,9 @@ def print_matching_models(io, search):
     else:
         io.tool_output(f'No models match "{search}".')
 
-
 def get_model_settings_as_yaml():
     from dataclasses import fields
-
     import yaml
-
     model_settings_list = []
     # Add default settings first with all field values
     defaults = {}
@@ -839,7 +756,6 @@ def get_model_settings_as_yaml():
         defaults[field.name] = field.default
     defaults["name"] = "(default values)"
     model_settings_list.append(defaults)
-
     # Sort model settings by name
     for ms in sorted(MODEL_SETTINGS, key=lambda x: x.name):
         # Create dict with explicit field order
@@ -849,9 +765,8 @@ def get_model_settings_as_yaml():
             if value != field.default:
                 model_settings_dict[field.name] = value
         model_settings_list.append(model_settings_dict)
-        # Add blank line between entries
-        model_settings_list.append(None)
-
+    # Add blank line between entries
+    model_settings_list.append(None)
     # Filter out None values before dumping
     yaml_str = yaml.dump(
         [ms for ms in model_settings_list if ms is not None],
@@ -861,26 +776,22 @@ def get_model_settings_as_yaml():
     # Add actual blank lines between entries
     return yaml_str.replace("\n- ", "\n\n- ")
 
-
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python models.py <model_name> or python models.py --yaml")
+        print("Usage: python models.py or python models.py --yaml")
         sys.exit(1)
-
     if sys.argv[1] == "--yaml":
         yaml_string = get_model_settings_as_yaml()
         print(yaml_string)
     else:
         model_name = sys.argv[1]
         matching_models = fuzzy_match_models(model_name)
-
         if matching_models:
             print(f"Matching models for '{model_name}':")
             for model in matching_models:
                 print(model)
         else:
             print(f"No matching models found for '{model_name}'.")
-
 
 if __name__ == "__main__":
     main()

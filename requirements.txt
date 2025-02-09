@@ -256,3 +256,9 @@ zipp==3.21.0
 # The following packages are considered to be unsafe in a requirements file:
 pip==25.0
     # via -r requirements/requirements.in
+
+arize-phoenix-otel>=1.0.0
+
+openinference-instrumentation-litellm>=1.0.0
+
+lunary>=1.0.0
