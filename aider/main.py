@@ -1,4 +1,3 @@
-import configparser
 import json
 import os
 import re
@@ -25,6 +24,7 @@ from aider.coders import Coder
 from aider.coders.base_coder import UnknownEditFormat
 from aider.commands import Commands, SwitchCoder
 from aider.copypaste import ClipboardWatcher
+from aider.deprecated import handle_deprecated_model_args
 from aider.format_settings import format_settings, scrub_sensitive_info
 from aider.history import ChatSummary
 from aider.io import InputOutput
@@ -126,17 +126,15 @@ def setup_git(git_root, io):
     if not repo:
         return
 
-    user_name = None
-    user_email = None
-    with repo.config_reader() as config:
-        try:
-            user_name = config.get_value("user", "name", None)
-        except (configparser.NoSectionError, configparser.NoOptionError):
-            pass
-        try:
-            user_email = config.get_value("user", "email", None)
-        except (configparser.NoSectionError, configparser.NoOptionError):
-            pass
+    try:
+        user_name = repo.git.config("--get", "user.name") or None
+    except git.exc.GitCommandError:
+        user_name = None
+
+    try:
+        user_email = repo.git.config("--get", "user.email") or None
+    except git.exc.GitCommandError:
+        user_email = None
 
     if user_name and user_email:
         return repo.working_tree_dir
@@ -507,6 +505,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         litellm._load_litellm()
         litellm._lazy_module.client_session = httpx.Client(verify=False)
         litellm._lazy_module.aclient_session = httpx.AsyncClient(verify=False)
+        # Set verify_ssl on the model_info_manager
+        models.model_info_manager.set_verify_ssl(False)
 
     if args.timeout:
         models.request_timeout = args.timeout
@@ -555,6 +555,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             editingmode=editing_mode,
             fancy_input=args.fancy_input,
             multiline_mode=args.multiline,
+            notifications=args.notifications,
+            notifications_command=args.notifications_command,
         )
 
     io = get_io(args.pretty)
@@ -594,6 +596,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     if args.openai_api_key:
         os.environ["OPENAI_API_KEY"] = args.openai_api_key
+
+    # Handle deprecated model shortcut args
+    handle_deprecated_model_args(args, io)
     if args.openai_api_base:
         os.environ["OPENAI_API_BASE"] = args.openai_api_base
     if args.openai_api_version:
@@ -751,7 +756,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         model_key_pairs = [
             ("ANTHROPIC_API_KEY", "sonnet"),
             ("DEEPSEEK_API_KEY", "deepseek"),
-            ("OPENROUTER_API_KEY", "openrouter/anthropic/claude-3.5-sonnet"),
+            ("OPENROUTER_API_KEY", "openrouter/anthropic/claude-3.7-sonnet"),
             ("OPENAI_API_KEY", "gpt-4o"),
             ("GEMINI_API_KEY", "flash"),
         ]
@@ -775,13 +780,19 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         editor_edit_format=args.editor_edit_format,
     )
 
-    # add --reasoning-effort cli param
+    # Check if deprecated remove_reasoning is set
+    if main_model.remove_reasoning is not None:
+        io.tool_warning(
+            "Model setting 'remove_reasoning' is deprecated, please use 'reasoning_tag' instead."
+        )
+
+    # Set reasoning effort if specified
     if args.reasoning_effort is not None:
-        if not getattr(main_model, "extra_params", None):
-            main_model.extra_params = {}
-        if "extra_body" not in main_model.extra_params:
-            main_model.extra_params["extra_body"] = {}
-        main_model.extra_params["extra_body"]["reasoning_effort"] = args.reasoning_effort
+        main_model.set_reasoning_effort(args.reasoning_effort)
+
+    # Set thinking tokens if specified
+    if args.thinking_tokens is not None:
+        main_model.set_thinking_tokens(args.thinking_tokens)
 
     if args.copy_paste and args.edit_format is None:
         if main_model.edit_format in ("diff", "whole"):
@@ -855,6 +866,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         parser=parser,
         verbose=args.verbose,
         editor=args.editor,
+        original_read_only_fnames=read_only_fnames,
     )
 
     summarizer = ChatSummary(
@@ -909,6 +921,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             chat_language=args.chat_language,
             detect_urls=args.detect_urls,
             auto_copy_context=args.copy_paste,
+            auto_accept_architect=args.auto_accept_architect,
         )
     except UnknownEditFormat as err:
         io.tool_error(str(err))
@@ -1060,7 +1073,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     while True:
         try:
-            coder.ok_to_warm_cache = True
+            coder.ok_to_warm_cache = bool(args.cache_keepalive_pings)
             coder.run()
             analytics.event("exit", reason="Completed main CLI coder.run")
             return

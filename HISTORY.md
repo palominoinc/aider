@@ -1,5 +1,91 @@
 # Release history
 
+### main branch
+
+- Big upgrade in [programming languages supported](https://aider.chat/docs/languages.html) by adopting [tree-sitter-language-pack](https://github.com/Goldziher/tree-sitter-language-pack/).
+  - 130 new languages with linter support.
+  - 20 new languages with repo-map support.
+- Added `/think-tokens` command to set thinking token budget with support for human-readable formats (8k, 10.5k, 0.5M).
+- Added `/reasoning-effort` command to control model reasoning level.
+- The `/think-tokens` and `/reasoning-effort` commands display current settings when called without arguments.
+- Display of thinking token budget and reasoning effort in model information.
+- Changed `--thinking-tokens` argument to accept string values with human-readable formats.
+- Added `--auto-accept-architect` flag (default: true) to automatically accept changes from architect coder format without confirmation.
+- The bare `/drop` command now preserves original read-only files provided via args.read.
+- Fixed a bug where default model would be set by deprecated `--shortcut` switches even when already specified in the command line.
+- Improved AutoCompleter to require 3 characters for autocompletion to reduce noise.
+- Aider wrote 72% of the code in this release.
+
+### Aider v0.76.2
+
+- Fixed handling of JSONDecodeError when loading model cache file.
+- Fixed handling of GitCommandError when retrieving git user configuration.
+- Aider wrote 75% of the code in this release.
+
+### Aider v0.76.1
+
+- Added ignore_permission_denied option to file watcher to prevent errors when accessing restricted files, by Yutaka Matsubara.
+- Aider wrote 0% of the code in this release.
+
+### Aider v0.76.0
+
+- Improved support for thinking/reasoningmodels:
+  - Added `--thinking-tokens` CLI option to control token budget for models that support thinking.
+  - Display thinking/reasoning content from LLMs which return it.
+  - Enhanced handling of reasoning tags to better clean up model responses.
+  - Added deprecation warning for `remove_reasoning` setting, now replaced by `reasoning_tag`.
+- Aider will notify you when it's completed the last request and needs your input:
+  - Added [notifications when LLM responses are ready](https://aider.chat/docs/usage/notifications.html) with `--notifications` flag.
+  - Specify desktop notification command with `--notifications-command`.
+- Added support for QWQ 32B.
+- Switch to `tree-sitter-language-pack` for tree sitter support.
+- Improved error handling for EOF (Ctrl+D) in user input prompts.
+- Added helper function to ensure hex color values have a # prefix.
+- Fixed handling of Git errors when reading staged files.
+- Improved SSL verification control for model information requests.
+- Improved empty LLM response handling with clearer warning messages.
+- Fixed Git identity retrieval to respect global configuration, by Akira Komamura.
+- Offer to install dependencies for Bedrock and Vertex AI models.
+- Deprecated model shortcut args (like --4o, --opus) in favor of the --model flag.
+- Aider wrote 85% of the code in this release.
+
+### Aider v0.75.3
+
+- Support for V3 free on OpenRouter: `--model openrouter/deepseek/deepseek-chat:free`.
+
+### Aider v0.75.2
+
+- Added support for Claude 3.7 Sonnet models on OpenRouter, Bedrock and Vertex AI.
+- Updated default model to Claude 3.7 Sonnet on OpenRouter.
+- Added support for GPT-4.5-preview model.
+- Added support for Claude 3.7 Sonnet:beta on OpenRouter.
+- Fixed weak_model_name patterns to match main model name patterns for some models.
+
+### Aider v0.75.1
+
+- Added support for `openrouter/anthropic/claude-3.7-sonnet`
+
+### Aider v0.75.0
+
+- Basic support for Claude 3.7 Sonnet
+  - Use `--model sonnet` to use the new 3.7
+  - Thinking support coming soon.
+- Bugfix to `/editor` command.
+- Aider wrote 46% of the code in this release.
+
+### Aider v0.74.3
+
+- Downgrade streamlit dependency to avoid threading bug.
+- Added support for tree-sitter language pack.
+- Added openrouter/o3-mini-high model configuration.
+- Added build.gradle.kts to special files for Kotlin project support, by Lucas Shadler.
+
+### Aider v0.74.2
+
+- Prevent more than one cache warming thread from becoming active.
+- Fixed continuation prompt ". " for multiline input.
+- Added HCL (Terraform) syntax support, by Warren Krewenki.
+
 ### Aider v0.74.1
 
 - Have o1 & o3-mini generate markdown by sending the magic "Formatting re-enabled." string.
