@@ -403,6 +403,17 @@ class InputOutput:
                     "pygments.literal.string": f"bold italic {self.user_input_color}",
                 }
             )
+            
+        # Add code block styling with bright green text and no background
+        style_dict.update({
+            "pygments.string": "bright_green",
+            "pygments.keyword": "bright_green",
+            "pygments.name": "bright_green",
+            "pygments.comment": "bright_green",
+            "pygments.operator": "bright_green",
+            "pygments.punctuation": "bright_green",
+            "pygments.number": "bright_green",
+        })
 
         # Conditionally add 'completion-menu' style
         completion_menu_style = []
@@ -1017,8 +1028,12 @@ class InputOutput:
             pretty = self.pretty
 
         if pretty:
-            show_resp = Markdown(
-                message, style=self.assistant_output_color, code_theme=self.code_theme
+            # Use NoInsetMarkdown with custom styling for code blocks
+            from aider.mdstream import NoInsetMarkdown
+            show_resp = NoInsetMarkdown(
+                message, 
+                style=self.assistant_output_color, 
+                code_theme="default"
             )
         else:
             show_resp = Text(message or "(empty response)")
