@@ -62,7 +62,6 @@ class Commands:
         verbose=False,
         editor=None,
         original_read_only_fnames=None,
-        input_pipe=None,
     ):
         self.io = io
         self.coder = coder
@@ -80,7 +79,6 @@ class Commands:
 
         self.help = None
         self.editor = editor
-        self.input_pipe = input_pipe
 
         # Store the original read-only filenames provided via args.read
         self.original_read_only_fnames = set(original_read_only_fnames or [])
@@ -1216,11 +1214,6 @@ class Commands:
 
     def cmd_voice(self, args):
         "Record and transcribe voice input"
-
-        # If using input pipe, don't try to record voice
-        if hasattr(self.io, 'input_pipe') and self.io.input_pipe:
-            self.io.tool_warning("Voice recording is not available when using input pipe.")
-            return
 
         if not self.voice:
             if "OPENAI_API_KEY" not in os.environ:
