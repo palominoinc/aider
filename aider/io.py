@@ -522,6 +522,7 @@ class InputOutput:
         commands,
         abs_read_only_fnames=None,
         edit_format=None,
+        input_pipe=None,
     ):
         self.rule()
 
@@ -632,7 +633,15 @@ class InputOutput:
                 show = self.prompt_prefix
 
             try:
-                if self.prompt_session:
+                if input_pipe:
+                    # Read from the pipe instead of stdin
+                    try:
+                        with open(input_pipe, 'r') as pipe:
+                            line = pipe.readline().rstrip('\n')
+                    except (FileNotFoundError, PermissionError) as e:
+                        self.tool_error(f"Error reading from pipe {input_pipe}: {e}")
+                        line = ""
+                elif self.prompt_session:
                     # Use placeholder if set, then clear it
                     default = self.placeholder or ""
                     self.placeholder = None
@@ -723,8 +732,10 @@ class InputOutput:
                 inp = line
                 break
 
-        print()
-        self.user_input(inp)
+        # Only print a newline and echo the input if not using a pipe
+        if not input_pipe:
+            print()
+            self.user_input(inp)
         return inp
 
     def add_to_input_history(self, inp):

@@ -62,6 +62,7 @@ class Commands:
         verbose=False,
         editor=None,
         original_read_only_fnames=None,
+        input_pipe=None,
     ):
         self.io = io
         self.coder = coder
