@@ -649,30 +649,14 @@ class InputOutput:
                                 line = ""
                                 continue
                         
-                        # Open the pipe in blocking mode with a timeout
-                        # This ensures we can still handle other inputs and prompts
-                        import select
-                        
-                        # Open the pipe in non-blocking mode initially
-                        fd = os.open(input_pipe, os.O_RDONLY | os.O_NONBLOCK)
-                        try:
-                            # Use select to wait for data with a timeout
-                            readable, _, _ = select.select([fd], [], [], 0.5)
-                            if readable:
-                                # Switch to blocking mode for the actual read
-                                os.set_blocking(fd, True)
-                                data = os.read(fd, 4096).decode('utf-8')
-                                line = data.rstrip('\n')
-                                if line:
-                                    self.tool_output(f"Received: {line}")
-                                else:
-                                    line = ""
+                        # Open the pipe in blocking mode
+                        with open(input_pipe, 'r') as pipe:
+                            self.tool_output(f"Waiting for input on {input_pipe}...")
+                            line = pipe.readline().rstrip('\n')
+                            if line:
+                                self.tool_output(f"Received: {line}")
                             else:
-                                # No data available, try again
                                 line = ""
-                                continue
-                        finally:
-                            os.close(fd)
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from pipe {input_pipe}: {e}")
                         line = ""
@@ -909,47 +893,9 @@ class InputOutput:
             res = group.preference
             self.user_input(f"{question}{res}", log_only=False)
         elif hasattr(self, 'input_pipe') and self.input_pipe:
-            # For input pipe, try to read a response from the pipe
-            try:
-                import select
-                
-                # Create the pipe if it doesn't exist
-                if not os.path.exists(self.input_pipe):
-                    try:
-                        os.mkfifo(self.input_pipe)
-                    except OSError:
-                        pass
-                
-                # Open the pipe in non-blocking mode
-                fd = os.open(self.input_pipe, os.O_RDONLY | os.O_NONBLOCK)
-                try:
-                    # Use select to wait for data with a timeout
-                    self.tool_output(f"Waiting for confirmation on {self.input_pipe}...")
-                    readable, _, _ = select.select([fd], [], [], 1.0)
-                    if readable:
-                        # Switch to blocking mode for the actual read
-                        os.set_blocking(fd, True)
-                        data = os.read(fd, 4096).decode('utf-8')
-                        pipe_response = data.strip().lower()
-                        
-                        if pipe_response and any(r.startswith(pipe_response) for r in valid_responses):
-                            res = pipe_response[0]
-                            self.tool_output(f"Received response from pipe: {pipe_response}")
-                        else:
-                            # Invalid or empty response, use default
-                            res = default
-                            self.tool_output(f"Using default response '{default}' for input pipe")
-                    else:
-                        # No data available, use default
-                        res = default
-                        self.tool_output(f"No response from pipe, using default '{default}'")
-                finally:
-                    os.close(fd)
-            except Exception as e:
-                # On any error, fall back to default
-                self.tool_error(f"Error reading from pipe: {e}")
-                res = default
-                self.tool_output(f"Using default response '{default}' for input pipe")
+            # For input pipe, always use the default response without waiting
+            res = default
+            self.tool_output(f"Using default response '{default}' for input pipe")
         else:
             while True:
                 try:
@@ -1022,48 +968,9 @@ class InputOutput:
         elif self.yes is False:
             res = "no"
         elif hasattr(self, 'input_pipe') and self.input_pipe:
-            # For input pipe, try to read a response from the pipe
-            try:
-                import select
-                import os
-                
-                # Create the pipe if it doesn't exist
-                if not os.path.exists(self.input_pipe):
-                    try:
-                        os.mkfifo(self.input_pipe)
-                    except OSError:
-                        pass
-                
-                # Open the pipe in non-blocking mode
-                fd = os.open(self.input_pipe, os.O_RDONLY | os.O_NONBLOCK)
-                try:
-                    # Use select to wait for data with a timeout
-                    self.tool_output(f"Waiting for input on {self.input_pipe}...")
-                    readable, _, _ = select.select([fd], [], [], 1.0)
-                    if readable:
-                        # Switch to blocking mode for the actual read
-                        os.set_blocking(fd, True)
-                        data = os.read(fd, 4096).decode('utf-8')
-                        pipe_response = data.strip()
-                        
-                        if pipe_response:
-                            res = pipe_response
-                            self.tool_output(f"Received response from pipe: {pipe_response}")
-                        else:
-                            # Empty response, use default
-                            res = default
-                            self.tool_output(f"Using default response '{default}' for input pipe")
-                    else:
-                        # No data available, use default
-                        res = default
-                        self.tool_output(f"No response from pipe, using default '{default}'")
-                finally:
-                    os.close(fd)
-            except Exception as e:
-                # On any error, fall back to default
-                self.tool_error(f"Error reading from pipe: {e}")
-                res = default
-                self.tool_output(f"Using default response '{default}' for input pipe")
+            # For input pipe, always use the default response without waiting
+            res = default
+            self.tool_output(f"Using default response '{default}' for input pipe")
         else:
             try:
                 if self.prompt_session:
