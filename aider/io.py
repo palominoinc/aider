@@ -1021,6 +1021,49 @@ class InputOutput:
             res = "yes"
         elif self.yes is False:
             res = "no"
+        elif hasattr(self, 'input_pipe') and self.input_pipe:
+            # For input pipe, try to read a response from the pipe
+            try:
+                import select
+                import os
+                
+                # Create the pipe if it doesn't exist
+                if not os.path.exists(self.input_pipe):
+                    try:
+                        os.mkfifo(self.input_pipe)
+                    except OSError:
+                        pass
+                
+                # Open the pipe in non-blocking mode
+                fd = os.open(self.input_pipe, os.O_RDONLY | os.O_NONBLOCK)
+                try:
+                    # Use select to wait for data with a timeout
+                    self.tool_output(f"Waiting for input on {self.input_pipe}...")
+                    readable, _, _ = select.select([fd], [], [], 1.0)
+                    if readable:
+                        # Switch to blocking mode for the actual read
+                        os.set_blocking(fd, True)
+                        data = os.read(fd, 4096).decode('utf-8')
+                        pipe_response = data.strip()
+                        
+                        if pipe_response:
+                            res = pipe_response
+                            self.tool_output(f"Received response from pipe: {pipe_response}")
+                        else:
+                            # Empty response, use default
+                            res = default
+                            self.tool_output(f"Using default response '{default}' for input pipe")
+                    else:
+                        # No data available, use default
+                        res = default
+                        self.tool_output(f"No response from pipe, using default '{default}'")
+                finally:
+                    os.close(fd)
+            except Exception as e:
+                # On any error, fall back to default
+                self.tool_error(f"Error reading from pipe: {e}")
+                res = default
+                self.tool_output(f"Using default response '{default}' for input pipe")
         else:
             try:
                 if self.prompt_session:

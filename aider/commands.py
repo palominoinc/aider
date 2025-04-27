@@ -1217,6 +1217,11 @@ class Commands:
     def cmd_voice(self, args):
         "Record and transcribe voice input"
 
+        # If using input pipe, don't try to record voice
+        if hasattr(self.io, 'input_pipe') and self.io.input_pipe:
+            self.io.tool_warning("Voice recording is not available when using input pipe.")
+            return
+
         if not self.voice:
             if "OPENAI_API_KEY" not in os.environ:
                 self.io.tool_error("To use /voice you must provide an OpenAI API key.")
