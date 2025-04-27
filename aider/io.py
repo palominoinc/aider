@@ -527,6 +527,7 @@ class InputOutput:
         # Store input_pipe as an instance variable so it can be accessed by other methods
         self.input_pipe = input_pipe
         self.rule()
+        self.tool_output(f"Using Input Pipe at {input_pipe}")
 
         # Ring the bell if needed
         self.ring_bell()
@@ -656,7 +657,6 @@ class InputOutput:
                         fd = os.open(input_pipe, os.O_RDONLY | os.O_NONBLOCK)
                         try:
                             # Use select to wait with a timeout
-                            self.tool_output(f"Waiting for input on {input_pipe}...")
                             readable, _, _ = select.select([fd], [], [], 0.5)
                             if readable:
                                 # Read from the pipe
@@ -684,6 +684,7 @@ class InputOutput:
                         continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
+                    self.tool_output(f"No input pipe:")
                     default = self.placeholder or ""
                     self.placeholder = None
 
