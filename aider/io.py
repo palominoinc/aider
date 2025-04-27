@@ -263,6 +263,7 @@ class InputOutput:
         root=".",
         notifications=False,
         notifications_command=None,
+        output_pipe=None,
     ):
         self.placeholder = None
         self.interrupted = False
@@ -275,6 +276,25 @@ class InputOutput:
             self.notifications_command = self.get_default_notification_command()
         else:
             self.notifications_command = notifications_command
+            
+        self.output_pipe = output_pipe
+        self.output_pipe_file = None
+        if self.output_pipe:
+            try:
+                # Check if the pipe exists first
+                if not os.path.exists(output_pipe):
+                    # Create the pipe if it doesn't exist
+                    try:
+                        os.mkfifo(output_pipe)
+                        print(f"Created output named pipe at {output_pipe}")
+                    except OSError as e:
+                        print(f"Failed to create output pipe {output_pipe}: {e}")
+                
+                # Open the pipe in non-blocking write mode
+                self.output_pipe_file = open(output_pipe, 'w')
+                print(f"Opened output pipe at {output_pipe}")
+            except Exception as e:
+                print(f"Error setting up output pipe {output_pipe}: {e}")
 
         no_color = os.environ.get("NO_COLOR")
         if no_color is not None and no_color != "":
@@ -813,6 +833,14 @@ class InputOutput:
         if not log_only:
             self.display_user_input(inp)
 
+        # Write to output pipe if configured
+        if self.output_pipe_file and inp:
+            try:
+                self.output_pipe_file.write(f"USER: {inp}\n")
+                self.output_pipe_file.flush()
+            except Exception as e:
+                print(f"Error writing to output pipe: {e}")
+
         prefix = "####"
         if inp:
             hist = inp.splitlines()
@@ -828,6 +856,14 @@ class InputOutput:
     # OUTPUT
 
     def ai_output(self, content):
+        # Write to output pipe if configured
+        if self.output_pipe_file and content:
+            try:
+                self.output_pipe_file.write(f"AI: {content}\n")
+                self.output_pipe_file.flush()
+            except Exception as e:
+                print(f"Error writing to output pipe: {e}")
+                
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
 
@@ -1017,6 +1053,14 @@ class InputOutput:
             else:
                 hist = message.strip() if strip else message
                 self.append_chat_history(hist, linebreak=True, blockquote=True)
+
+        # Write to output pipe if configured
+        if self.output_pipe_file and message:
+            try:
+                self.output_pipe_file.write(f"TOOL: {message}\n")
+                self.output_pipe_file.flush()
+            except Exception as e:
+                print(f"Error writing to output pipe: {e}")
 
         if not isinstance(message, Text):
             message = Text(message)

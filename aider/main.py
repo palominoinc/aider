@@ -568,6 +568,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             multiline_mode=args.multiline,
             notifications=args.notifications,
             notifications_command=args.notifications_command,
+            output_pipe=args.output_pipe,
         )
 
     io = get_io(args.pretty)
