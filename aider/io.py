@@ -649,20 +649,39 @@ class InputOutput:
                                 line = ""
                                 continue
                         
-                        # Open the pipe in blocking mode
-                        with open(input_pipe, 'r') as pipe:
+                        # Open the pipe in non-blocking mode
+                        import fcntl
+                        import select
+                        
+                        fd = os.open(input_pipe, os.O_RDONLY | os.O_NONBLOCK)
+                        try:
+                            # Use select to wait with a timeout
                             self.tool_output(f"Waiting for input on {input_pipe}...")
-                            line = pipe.readline().rstrip('\n')
-                            if line:
-                                self.tool_output(f"Received: {line}")
+                            readable, _, _ = select.select([fd], [], [], 0.5)
+                            if readable:
+                                # Read from the pipe
+                                buffer = os.read(fd, 4096).decode('utf-8')
+                                line = buffer.rstrip('\n')
+                                if line:
+                                    self.tool_output(f"Received: {line}")
+                                else:
+                                    line = ""
                             else:
+                                # No data available, try again
                                 line = ""
+                                continue
+                        finally:
+                            os.close(fd)
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from pipe {input_pipe}: {e}")
                         line = ""
                         # Sleep to avoid tight loop
                         import time
                         time.sleep(0.1)
+                    except BlockingIOError:
+                        # No data available
+                        line = ""
+                        continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
                     default = self.placeholder or ""
