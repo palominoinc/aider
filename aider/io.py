@@ -524,10 +524,9 @@ class InputOutput:
         edit_format=None,
         input_pipe=None,
     ):
-        # Store input_pipe as an instance variable so it can be accessed by other methods
-        self.input_pipe = input_pipe
         self.rule()
-        self.tool_output(f"Using Input Pipe at {input_pipe}")
+        if input_pipe:
+            self.tool_output(f"Using Input Pipe at {input_pipe}")
 
         # Ring the bell if needed
         self.ring_bell()
@@ -774,10 +773,8 @@ class InputOutput:
                 inp = line
                 break
 
-        # Only print a newline and echo the input if not using a pipe
-        if not input_pipe:
-            print()
-            self.user_input(inp)
+        print()
+        self.user_input(inp)
         return inp
 
     def add_to_input_history(self, inp):
@@ -854,6 +851,7 @@ class InputOutput:
         explicit_yes_required=False,
         group=None,
         allow_never=False,
+        input_pipe=None,
     ):
         self.num_user_asks += 1
 
@@ -912,7 +910,7 @@ class InputOutput:
         elif group and group.preference:
             res = group.preference
             self.user_input(f"{question}{res}", log_only=False)
-        elif hasattr(self, 'input_pipe') and self.input_pipe:
+        elif input_pipe:
             # For input pipe, always use the default response without waiting
             res = default
             self.tool_output(f"Using default response '{default}' for input pipe")
@@ -971,7 +969,7 @@ class InputOutput:
         return is_yes
 
     @restore_multiline
-    def prompt_ask(self, question, default="", subject=None):
+    def prompt_ask(self, question, default="", subject=None, input_pipe=None):
         self.num_user_asks += 1
 
         # Ring the bell if needed
@@ -987,7 +985,7 @@ class InputOutput:
             res = "yes"
         elif self.yes is False:
             res = "no"
-        elif hasattr(self, 'input_pipe') and self.input_pipe:
+        elif input_pipe:
             # For input pipe, always use the default response without waiting
             res = default
             self.tool_output(f"Using default response '{default}' for input pipe")
