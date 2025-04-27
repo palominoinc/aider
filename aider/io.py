@@ -527,6 +527,8 @@ class InputOutput:
         self.rule()
         if input_pipe:
             self.tool_output(f"Using Input Pipe at {input_pipe}")
+        if input_pipe:
+            self.tool_output(f"Using Input Pipe at {input_pipe}")
 
         # Ring the bell if needed
         self.ring_bell()
