@@ -6,9 +6,9 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Set PYTHONPATH to BASEDIR
 export PYTHONPATH="$BASEDIR:/usr/local/lib/python3.9/site-packages"
 
-# Ensure the history directory exists
-AI_HIST=~/.aider/history
-AI_LOG=~/.aider/log
+# Ensure the history and log directories exist in BASEDIR
+AI_HIST="$BASEDIR/.aider/history"
+AI_LOG="$BASEDIR/.aider/log"
 mkdir -p $AI_HIST $AI_LOG
 
 # Check if we are at the root of a git repository
