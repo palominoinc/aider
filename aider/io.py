@@ -524,6 +524,8 @@ class InputOutput:
         edit_format=None,
         input_pipe=None,
     ):
+        # Store input_pipe as an instance variable so it can be accessed by other methods
+        self.input_pipe = input_pipe
         self.rule()
 
         # Ring the bell if needed
@@ -636,10 +638,38 @@ class InputOutput:
                 if input_pipe:
                     # Read from the pipe instead of stdin
                     try:
-                        with open(input_pipe, 'r') as pipe:
-                            line = pipe.readline().rstrip('\n')
+                        # Open the pipe in non-blocking mode to read a line
+                        import os
+                        import fcntl
+                        
+                        fd = os.open(input_pipe, os.O_RDONLY | os.O_NONBLOCK)
+                        try:
+                            # Set non-blocking mode
+                            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                            fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                            
+                            # Try to read a line
+                            line = ""
+                            buffer = os.read(fd, 4096).decode('utf-8')
+                            if buffer:
+                                line = buffer.rstrip('\n')
+                            else:
+                                # If no data is available, wait a bit and try again
+                                import time
+                                time.sleep(0.1)
+                                buffer = os.read(fd, 4096).decode('utf-8')
+                                if buffer:
+                                    line = buffer.rstrip('\n')
+                                else:
+                                    self.tool_error(f"No data available from pipe {input_pipe}")
+                                    line = ""
+                        finally:
+                            os.close(fd)
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from pipe {input_pipe}: {e}")
+                        line = ""
+                    except BlockingIOError:
+                        self.tool_error(f"No data available from pipe {input_pipe}")
                         line = ""
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
@@ -870,6 +900,10 @@ class InputOutput:
         elif group and group.preference:
             res = group.preference
             self.user_input(f"{question}{res}", log_only=False)
+        elif hasattr(self, 'input_pipe') and self.input_pipe:
+            # For input pipe, always use the default response
+            res = default
+            self.tool_output(f"Using default response '{default}' for input pipe")
         else:
             while True:
                 try:
