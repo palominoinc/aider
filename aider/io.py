@@ -638,39 +638,31 @@ class InputOutput:
                 if input_pipe:
                     # Read from the pipe instead of stdin
                     try:
-                        # Open the pipe in non-blocking mode to read a line
-                        import os
-                        import fcntl
+                        # Check if the pipe exists first
+                        if not os.path.exists(input_pipe):
+                            # Create the pipe if it doesn't exist
+                            try:
+                                os.mkfifo(input_pipe)
+                                self.tool_output(f"Created named pipe at {input_pipe}")
+                            except OSError as e:
+                                self.tool_error(f"Failed to create pipe {input_pipe}: {e}")
+                                line = ""
+                                continue
                         
-                        fd = os.open(input_pipe, os.O_RDONLY | os.O_NONBLOCK)
-                        try:
-                            # Set non-blocking mode
-                            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-                            fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-                            
-                            # Try to read a line
-                            line = ""
-                            buffer = os.read(fd, 4096).decode('utf-8')
-                            if buffer:
-                                line = buffer.rstrip('\n')
+                        # Open the pipe in blocking mode
+                        with open(input_pipe, 'r') as pipe:
+                            self.tool_output(f"Waiting for input on {input_pipe}...")
+                            line = pipe.readline().rstrip('\n')
+                            if line:
+                                self.tool_output(f"Received: {line}")
                             else:
-                                # If no data is available, wait a bit and try again
-                                import time
-                                time.sleep(0.1)
-                                buffer = os.read(fd, 4096).decode('utf-8')
-                                if buffer:
-                                    line = buffer.rstrip('\n')
-                                else:
-                                    self.tool_error(f"No data available from pipe {input_pipe}")
-                                    line = ""
-                        finally:
-                            os.close(fd)
+                                line = ""
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from pipe {input_pipe}: {e}")
                         line = ""
-                    except BlockingIOError:
-                        self.tool_error(f"No data available from pipe {input_pipe}")
-                        line = ""
+                        # Sleep to avoid tight loop
+                        import time
+                        time.sleep(1)
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
                     default = self.placeholder or ""
