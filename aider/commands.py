@@ -80,6 +80,7 @@ class Commands:
 
         self.help = None
         self.editor = editor
+        self.input_pipe = input_pipe
 
         # Store the original read-only filenames provided via args.read
         self.original_read_only_fnames = set(original_read_only_fnames or [])
