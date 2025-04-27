@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Ensure the history directory exists
+AI_HIST=~/.aider/history
+AI_LOG=~/.aider/log
+mkdir -p $AI_HIST $AI_LOG
+
+# Check if we are at the root of a git repository
+if [ -d ".git" ]; then
+  if [ ! -f .aiderignore ]; then
+    echo "Installing default .aiderignore since none present in repo"
+    cp /opt/webpal/etc/.aiderignore .
+  fi
+  # Get the current branch name
+  BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+  # Get the remote repository name
+  REPO_URL=$(git config --get remote.origin.url)
+  if [ "$REPO_URL" == "" ]; then 
+    REPO_NAME=`basename $PWD`
+  else
+    REPO_NAME=$(basename -s .git $REPO_URL)
+  fi
+  # Set the chat history file path
+  CHAT_HISTORY_FILE=${AI_HIST}/${REPO_NAME}.${BRANCH_NAME}.history.md
+else
+#  echo "Not in a git repo, therefore running with --chat-mode=ask"
+  CHATMODE="--chat-mode=ask --no-git"
+  CHAT_HISTORY_FILE=${AI_HIST}/ask.history.md
+fi
+
+LLM_HISTORY_FILE=$AI_LOG/llm.history.log
+
+#construct conf that favours local settings over > repo > system
+CONF=`mktemp`
+cat /etc/ai.conf ./ai.conf ~/ai.conf > $CONF 2>/dev/null
+
+AIDER="/opt/webpal/python/bin/aider"
+ENV="/opt/webpal/.env"
+
+$AIDER --env-file $ENV \
+  --config $CONF \
+  --chat-history-file $CHAT_HISTORY_FILE \
+  --llm-history-file $LLM_HISTORY_FILE \
+  --input-history-file $CHAT_HISTORY_FILE \
+  $CHATMODE \
+  $*
+
+echo "# aider chat ended at `date`" >> $CHAT_HISTORY_FILE
+
+rm -f $CONF
+
+
