@@ -15,7 +15,7 @@ LLM_HISTORY_FILE=$AI_LOG/llm.history.log
 CHAT_HISTORY_FILE=$AI_LOG/history.md 
 
 AIDER="$BASEDIR/aider.py"
-ENV="$BASEDIR/.env"
+ENV="/opt/webpal/.env"
 
 $AIDER \
   --env-file $ENV \
