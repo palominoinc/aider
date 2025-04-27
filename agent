@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Get the base directory of this script
+BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Set PYTHONPATH to BASEDIR
+export PYTHONPATH="$BASEDIR"
+
 # Ensure the history directory exists
 AI_HIST=~/.aider/history
 AI_LOG=~/.aider/log
@@ -34,11 +40,11 @@ LLM_HISTORY_FILE=$AI_LOG/llm.history.log
 CONF=`mktemp`
 cat /etc/ai.conf ./ai.conf ~/ai.conf > $CONF 2>/dev/null
 
-AIDER="/opt/webpal/python/bin/aider"
-ENV="/opt/webpal/.env"
+AIDER="$BASEDIR/aider"
+ENV="$BASEDIR/.env"
 
 $AIDER --env-file $ENV \
-  --config $CONF \
+  --config "$BASEDIR/ai.conf" \
   --chat-history-file $CHAT_HISTORY_FILE \
   --llm-history-file $LLM_HISTORY_FILE \
   --input-history-file $CHAT_HISTORY_FILE \
