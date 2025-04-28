@@ -291,8 +291,18 @@ class InputOutput:
                         print(f"Failed to create output pipe {output_pipe}: {e}")
                 
                 # Open the pipe in non-blocking write mode
+                import fcntl
+                import os
+                
+                # Open the pipe in write mode
                 self.output_pipe_file = open(output_pipe, 'w')
-                print(f"Opened output pipe at {output_pipe}")
+                
+                # Set the file descriptor to non-blocking mode
+                fd = self.output_pipe_file.fileno()
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                
+                print(f"Opened output pipe at {output_pipe} in non-blocking mode")
             except Exception as e:
                 print(f"Error setting up output pipe {output_pipe}: {e}")
 
@@ -848,6 +858,9 @@ class InputOutput:
             try:
                 self.output_pipe_file.write(f"USER: {inp}\n")
                 self.output_pipe_file.flush()
+            except BlockingIOError:
+                # This is expected with non-blocking pipes when buffer is full
+                pass
             except Exception as e:
                 print(f"Error writing to output pipe: {e}")
 
@@ -871,6 +884,9 @@ class InputOutput:
             try:
                 self.output_pipe_file.write(f"AI: {content}\n")
                 self.output_pipe_file.flush()
+            except BlockingIOError:
+                # This is expected with non-blocking pipes when buffer is full
+                pass
             except Exception as e:
                 print(f"Error writing to output pipe: {e}")
                 
@@ -1073,6 +1089,9 @@ class InputOutput:
             try:
                 self.output_pipe_file.write(f"TOOL: {message}\n")
                 self.output_pipe_file.flush()
+            except BlockingIOError:
+                # This is expected with non-blocking pipes when buffer is full
+                pass
             except Exception as e:
                 print(f"Error writing to output pipe: {e}")
 
