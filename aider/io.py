@@ -674,12 +674,18 @@ class InputOutput:
                                 cmd = self.file_watcher.process_changes()
                                 return cmd
                             continue
+                        
+                        # Set line to empty string to avoid UnboundLocalError
+                        line = ""
+                        continue
                             
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from file {input_pipe}: {e}")
                         # Wait 5 seconds before trying again
                         import time
                         time.sleep(5)
+                        # Set line to empty string to avoid UnboundLocalError
+                        line = ""
                         continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
