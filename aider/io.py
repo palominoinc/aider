@@ -281,29 +281,11 @@ class InputOutput:
         self.output_pipe_file = None
         if self.output_pipe:
             try:
-                # Check if the pipe exists first
-                if not os.path.exists(output_pipe):
-                    # Create the pipe if it doesn't exist
-                    try:
-                        os.mkfifo(output_pipe)
-                        print(f"Created output named pipe at {output_pipe}")
-                    except OSError as e:
-                        print(f"Failed to create output pipe {output_pipe}: {e}")
-                
-                # Open the pipe in non-blocking write mode
-                import fcntl
-                
-                # Open the pipe in write mode
+                # Open the file in write mode (will create if doesn't exist)
                 self.output_pipe_file = open(output_pipe, 'w')
-                
-                # Set the file descriptor to non-blocking mode
-                fd = self.output_pipe_file.fileno()
-                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-                
-                print(f"Opened output pipe at {output_pipe} in non-blocking mode")
+                print(f"Opened output file at {output_pipe}")
             except Exception as e:
-                print(f"Error setting up output pipe {output_pipe}: {e}")
+                print(f"Error setting up output file {output_pipe}: {e}")
 
         no_color = os.environ.get("NO_COLOR")
         if no_color is not None and no_color != "":
@@ -663,50 +645,39 @@ class InputOutput:
 
             try:
                 if input_pipe:
-                    # Read from the pipe instead of stdin
+                    # Read from the input file instead of stdin
                     try:
-                        # Check if the pipe exists first
-                        if not os.path.exists(input_pipe):
-                            # Create the pipe if it doesn't exist
-                            try:
-                                os.mkfifo(input_pipe)
-                                self.tool_output(f"Created named pipe at {input_pipe}")
-                            except OSError as e:
-                                self.tool_error(f"Failed to create pipe {input_pipe}: {e}")
-                                line = ""
-                                continue
-                        
-                        # Open the pipe in non-blocking mode
-                        import fcntl
-                        import select
-                        
-                        fd = os.open(input_pipe, os.O_RDONLY | os.O_NONBLOCK)
-                        try:
-                            # Use select to wait with a timeout
-                            readable, _, _ = select.select([fd], [], [], 0.5)
-                            if readable:
-                                # Read from the pipe
-                                buffer = os.read(fd, 4096).decode('utf-8')
-                                line = buffer.rstrip('\n')
-                                if line:
-                                    self.tool_output(f"Received: {line}")
-                                else:
-                                    line = ""
+                        # Check if the file exists and has content
+                        if os.path.exists(input_pipe) and os.path.getsize(input_pipe) > 0:
+                            # Read the entire file content
+                            with open(input_pipe, 'r') as f:
+                                buffer = f.read()
+                            
+                            # Clear the file after reading
+                            with open(input_pipe, 'w') as f:
+                                pass
+                                
+                            line = buffer.rstrip('\n')
+                            if line:
+                                self.tool_output(f"Received: {line}")
                             else:
-                                # No data available, try again
                                 line = ""
+                                # Sleep to avoid tight loop
+                                import time
+                                time.sleep(0.1)
                                 continue
-                        finally:
-                            os.close(fd)
+                        else:
+                            # File doesn't exist or is empty, wait and try again
+                            line = ""
+                            import time
+                            time.sleep(0.1)
+                            continue
                     except (FileNotFoundError, PermissionError) as e:
-                        self.tool_error(f"Error reading from pipe {input_pipe}: {e}")
+                        self.tool_error(f"Error reading from file {input_pipe}: {e}")
                         line = ""
                         # Sleep to avoid tight loop
                         import time
                         time.sleep(0.1)
-                    except BlockingIOError:
-                        # No data available
-                        line = ""
                         continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
@@ -839,29 +810,26 @@ class InputOutput:
         self.console.print(Text(inp), **style)
 
     def close_output_pipe(self):
-        """Close the output pipe if it's open."""
+        """Close the output file if it's open."""
         if self.output_pipe_file:
             try:
                 self.output_pipe_file.close()
                 self.output_pipe_file = None
-                print(f"Closed output pipe at {self.output_pipe}")
+                print(f"Closed output file at {self.output_pipe}")
             except Exception as e:
-                print(f"Error closing output pipe: {e}")
+                print(f"Error closing output file: {e}")
 
     def user_input(self, inp, log_only=True):
         if not log_only:
             self.display_user_input(inp)
 
-        # Write to output pipe if configured
+        # Write to output file if configured
         if self.output_pipe_file and inp:
             try:
                 self.output_pipe_file.write(f"USER: {inp}\n")
                 self.output_pipe_file.flush()
-            except BlockingIOError:
-                # This is expected with non-blocking pipes when buffer is full
-                pass
             except Exception as e:
-                print(f"Error writing to output pipe: {e}")
+                print(f"Error writing to output file: {e}")
 
         prefix = "####"
         if inp:
@@ -878,16 +846,13 @@ class InputOutput:
     # OUTPUT
 
     def ai_output(self, content):
-        # Write to output pipe if configured
+        # Write to output file if configured
         if self.output_pipe_file and content:
             try:
                 self.output_pipe_file.write(f"AI: {content}\n")
                 self.output_pipe_file.flush()
-            except BlockingIOError:
-                # This is expected with non-blocking pipes when buffer is full
-                pass
             except Exception as e:
-                print(f"Error writing to output pipe: {e}")
+                print(f"Error writing to output file: {e}")
                 
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
@@ -1083,16 +1048,13 @@ class InputOutput:
                 hist = message.strip() if strip else message
                 self.append_chat_history(hist, linebreak=True, blockquote=True)
 
-        # Write to output pipe if configured
+        # Write to output file if configured
         if self.output_pipe_file and message:
             try:
                 self.output_pipe_file.write(f"TOOL: {message}\n")
                 self.output_pipe_file.flush()
-            except BlockingIOError:
-                # This is expected with non-blocking pipes when buffer is full
-                pass
             except Exception as e:
-                print(f"Error writing to output pipe: {e}")
+                print(f"Error writing to output file: {e}")
 
         if not isinstance(message, Text):
             message = Text(message)
