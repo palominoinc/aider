@@ -829,6 +829,16 @@ class InputOutput:
 
         self.console.print(Text(inp), **style)
 
+    def close_output_pipe(self):
+        """Close the output pipe if it's open."""
+        if self.output_pipe_file:
+            try:
+                self.output_pipe_file.close()
+                self.output_pipe_file = None
+                print(f"Closed output pipe at {self.output_pipe}")
+            except Exception as e:
+                print(f"Error closing output pipe: {e}")
+
     def user_input(self, inp, log_only=True):
         if not log_only:
             self.display_user_input(inp)
@@ -866,6 +876,10 @@ class InputOutput:
                 
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
+        
+        # Close the output pipe after sending the AI's response
+        # This allows the reading process to be unblocked
+        self.close_output_pipe()
 
     def offer_url(self, url, prompt="Open URL for more info?", allow_never=True):
         """Offer to open a URL in the browser, returns True if opened."""
@@ -1219,6 +1233,10 @@ class InputOutput:
                 print(f"Warning: Unable to write to chat history file {self.chat_history_file}.")
                 print(err)
                 self.chat_history_file = None  # Disable further attempts to write
+                
+    def cleanup(self):
+        """Clean up resources before exiting."""
+        self.close_output_pipe()
 
     def format_files_for_input(self, rel_fnames, rel_read_only_fnames):
         if not self.pretty:
