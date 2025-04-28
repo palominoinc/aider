@@ -10,10 +10,6 @@ export PYTHONPATH="$BASEDIR:/usr/local/lib/python3.9/site-packages"
 AI_LOG="$BASEDIR/log"
 mkdir -p $AI_LOG
 
-# Get the agent ID from the first argument or use a default
-AGENT_ID=${1:-"ai-coder"}
-shift 1 2>/dev/null || true
-
 # Set up history files with agent-specific names
 LLM_HISTORY_FILE=$AI_LOG/llm.${AGENT_ID}.history.log
 CHAT_HISTORY_FILE=$AI_LOG/history.${AGENT_ID}.md 
@@ -27,8 +23,5 @@ $AIDER \
   --chat-history-file $CHAT_HISTORY_FILE \
   --llm-history-file $LLM_HISTORY_FILE \
   --input-history-file $CHAT_HISTORY_FILE \
-  --use-redis \
-  --redis-url "redis://localhost:6379/0" \
-  --agent-id $AGENT_ID \
-  $*
+  "$@"
 
