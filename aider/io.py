@@ -648,6 +648,7 @@ class InputOutput:
                     # Read from the input file instead of stdin, polling every 5 seconds
                     try:
                         # Check if the file exists and has content
+                        line = ""
                         if os.path.exists(input_pipe) and os.path.getsize(input_pipe) > 0:
                             # Read the entire file content
                             with open(input_pipe, 'r') as f:
@@ -674,11 +675,7 @@ class InputOutput:
                                 cmd = self.file_watcher.process_changes()
                                 return cmd
                             continue
-                        
-                        # Set line to empty string to avoid UnboundLocalError
-                        line = ""
-                        continue
-                            
+                                                    
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from file {input_pipe}: {e}")
                         # Wait 5 seconds before trying again
