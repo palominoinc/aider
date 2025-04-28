@@ -853,6 +853,7 @@ class InputOutput:
                 with open(self.output_pipe, 'a') as f:
                     f.write(f"AI: {content}\n")
                 print(f"Wrote AI response to {self.output_pipe}")
+                f.close()
             except Exception as e:
                 print(f"Error writing to output file: {e}")
                 
