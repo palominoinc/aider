@@ -551,26 +551,30 @@ class InputOutput:
             self.prompt_session.app.exit()
 
     def flush_redis_message_buffer(self):
-        """Flush all buffered messages to Redis"""
+        """Flush all buffered messages to Redis by combining them into a single message"""
         if not self.use_redis or not self.redis_messaging or not self.redis_messaging.is_connected():
             return
             
         if not self.redis_message_buffer:
             return
-            
-        for msg in self.redis_message_buffer:
-            msg_type = msg.get('type', 'unknown')
-            content = msg.get('content', '')
-            target_agent = msg.get('target_agent')
-            
-            if msg_type == 'ai_output':
-                self.redis_messaging.send_ai_output(content, target_agent=target_agent)
-            elif msg_type == 'tool_output':
-                self.redis_messaging.send_tool_output(content, target_agent=target_agent)
-            elif msg_type == 'user_input':
-                self.redis_messaging.send_user_input(content, target_agent=target_agent)
+        
+        # Get the type and target agent from the first message
+        first_msg = self.redis_message_buffer[0]
+        msg_type = first_msg.get('type', 'unknown')
+        target_agent = first_msg.get('target_agent')
+        
+        # Combine all message contents
+        combined_content = "\n".join(msg.get('content', '') for msg in self.redis_message_buffer)
+        
+        # Send the combined message
+        if msg_type == 'ai_output':
+            self.redis_messaging.send_ai_output(combined_content, target_agent=target_agent)
+        elif msg_type == 'tool_output':
+            self.redis_messaging.send_tool_output(combined_content, target_agent=target_agent)
+        elif msg_type == 'user_input':
+            self.redis_messaging.send_user_input(combined_content, target_agent=target_agent)
                 
-        # Clear the buffer after sending all messages
+        # Clear the buffer after sending the combined message
         self.redis_message_buffer = []
         
     def get_input(
