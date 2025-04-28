@@ -17,28 +17,17 @@ AIDER="$BASEDIR/aider.py"
 ENV="/opt/webpal/.env"
 
 # Get agent ID from hostname or generate a unique one
-AGENT_ID=$(hostname)
+# AGENT_ID=$(hostname)
 if [ -z "$AGENT_ID" ]; then
   AGENT_ID="agent-$(date +%s)"
 fi
 
 # Redis configuration - can be overridden by environment variables
+USE_REDIS=${USE_REDIS:-"true"}
 REDIS_URL=${REDIS_URL:-"redis://localhost:6379/0"}
 REDIS_PREFIX=${REDIS_PREFIX:-"aider:"}
 REDIS_VERBOSE=${REDIS_VERBOSE:-"false"}
 
-# Check if Redis is enabled
-USE_REDIS=${USE_REDIS:-"true"}
-
-# Build the Redis arguments if Redis is enabled
-REDIS_ARGS=""
-if [ "$USE_REDIS" = "true" ]; then
-  REDIS_ARGS="--use-redis --redis-url $REDIS_URL --redis-channel-prefix $REDIS_PREFIX --agent-id $AGENT_ID"
-  if [ "$REDIS_VERBOSE" = "true" ]; then
-    REDIS_ARGS="$REDIS_ARGS --redis-verbose"
-  fi
-  echo "Redis messaging enabled. Agent ID: $AGENT_ID"
-fi
 
 $AIDER \
   --env-file $ENV \
@@ -46,6 +35,5 @@ $AIDER \
   --chat-history-file $CHAT_HISTORY_FILE \
   --llm-history-file $LLM_HISTORY_FILE \
   --input-history-file $CHAT_HISTORY_FILE \
-  $REDIS_ARGS \
   $*
 
