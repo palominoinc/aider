@@ -274,6 +274,8 @@ class InputOutput:
         agent_id=None,
         redis_verbose=False
     ):
+        # Initialize message buffer for delayed Redis messages
+        self.redis_message_buffer = []
         self.placeholder = None
         self.interrupted = False
         self.never_prompts = set()
@@ -548,6 +550,33 @@ class InputOutput:
             self.interrupted = True
             self.prompt_session.app.exit()
 
+    def flush_redis_message_buffer(self):
+        """Flush all buffered messages to Redis by combining them into a single message"""
+        if not self.use_redis or not self.redis_messaging or not self.redis_messaging.is_connected():
+            return
+            
+        if not self.redis_message_buffer:
+            return
+        
+        # Get the type and target agent from the first message
+        first_msg = self.redis_message_buffer[0]
+        msg_type = first_msg.get('type', 'unknown')
+        target_agent = first_msg.get('target_agent')
+        
+        # Combine all message contents
+        combined_content = "\n".join(msg.get('content', '') for msg in self.redis_message_buffer)
+        
+        # Send the combined message
+        if msg_type == 'ai_output':
+            self.redis_messaging.send_ai_output(combined_content, target_agent=target_agent)
+        elif msg_type == 'tool_output':
+            self.redis_messaging.send_tool_output(combined_content, target_agent=target_agent)
+        elif msg_type == 'user_input':
+            self.redis_messaging.send_user_input(combined_content, target_agent=target_agent)
+                
+        # Clear the buffer after sending the combined message
+        self.redis_message_buffer = []
+        
     def get_input(
         self,
         root,
@@ -557,6 +586,8 @@ class InputOutput:
         abs_read_only_fnames=None,
         edit_format=None,
     ):
+        # Flush any buffered messages before waiting for input
+        self.flush_redis_message_buffer()
         self.rule()
 
         # Ring the bell if needed
@@ -854,9 +885,15 @@ class InputOutput:
             elif self.redis_messaging.agent_id == "ai-analyst":
                 target_agent = "ai-coder"
                 
-            self.redis_messaging.send_ai_output(content, target_agent=target_agent)
+            # Buffer the message instead of sending immediately
+            self.redis_message_buffer.append({
+                'type': 'ai_output',
+                'content': content,
+                'target_agent': target_agent
+            })
+            
             if target_agent:
-                self.tool_output(f"Sent output to {target_agent}", log_only=False)
+                self.tool_output(f"Buffered output to send to {target_agent}", log_only=False)
                 
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
@@ -1047,7 +1084,22 @@ class InputOutput:
 
         # Use Redis for messaging if enabled
         if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected() and message:
-            self.redis_messaging.send_tool_output(str(message))
+            # Only send to the other agent if this is the ai-coder agent
+            if self.redis_messaging.agent_id == "ai-coder":
+                target_agent = "ai-analyst"
+                # Buffer the message instead of sending immediately
+                self.redis_message_buffer.append({
+                    'type': 'tool_output',
+                    'content': str(message),
+                    'target_agent': target_agent
+                })
+            else:
+                # For other agents, just buffer broadcast message
+                self.redis_message_buffer.append({
+                    'type': 'tool_output',
+                    'content': str(message),
+                    'target_agent': None
+                })
 
         if not isinstance(message, Text):
             message = Text(message)
@@ -1219,16 +1271,14 @@ class InputOutput:
             self.tool_error(f"Redis messaging not available. Cannot send to agent {agent_id}.")
             return False
             
-        if message_type == "user_input":
-            self.redis_messaging.send_user_input(message, target_agent=agent_id)
-        elif message_type == "ai_output":
-            self.redis_messaging.send_ai_output(message, target_agent=agent_id)
-        elif message_type == "tool_output":
-            self.redis_messaging.send_tool_output(message, target_agent=agent_id)
-        else:
-            self.tool_error(f"Unknown message type: {message_type}")
-            return False
-            
+        # Buffer the message instead of sending immediately
+        self.redis_message_buffer.append({
+            'type': message_type,
+            'content': message,
+            'target_agent': agent_id
+        })
+        
+        self.tool_output(f"Buffered {message_type} to send to agent {agent_id}", log_only=True)
         return True
     
     def broadcast_message(self, message, message_type="user_input"):
@@ -1237,16 +1287,14 @@ class InputOutput:
             self.tool_error("Redis messaging not available. Cannot broadcast message.")
             return False
             
-        if message_type == "user_input":
-            self.redis_messaging.send_user_input(message)
-        elif message_type == "ai_output":
-            self.redis_messaging.send_ai_output(message)
-        elif message_type == "tool_output":
-            self.redis_messaging.send_tool_output(message)
-        else:
-            self.tool_error(f"Unknown message type: {message_type}")
-            return False
-            
+        # Buffer the message instead of sending immediately
+        self.redis_message_buffer.append({
+            'type': message_type,
+            'content': message,
+            'target_agent': None
+        })
+        
+        self.tool_output(f"Buffered {message_type} to broadcast", log_only=True)
         return True
                 
 
