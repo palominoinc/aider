@@ -645,7 +645,7 @@ class InputOutput:
 
             try:
                 if input_pipe:
-                    # Read from the input file instead of stdin
+                    # Read from the input file instead of stdin, polling every 5 seconds
                     try:
                         # Check if the file exists and has content
                         if os.path.exists(input_pipe) and os.path.getsize(input_pipe) > 0:
@@ -660,24 +660,26 @@ class InputOutput:
                             line = buffer.rstrip('\n')
                             if line:
                                 self.tool_output(f"Received: {line}")
-                            else:
-                                line = ""
-                                # Sleep to avoid tight loop
-                                import time
-                                time.sleep(0.1)
-                                continue
-                        else:
-                            # File doesn't exist or is empty, wait and try again
+                                break  # Exit the loop with the input
+                        
+                        # If we reach here, either the file doesn't exist or is empty
+                        # Wait 5 seconds before checking again
+                        import time
+                        time.sleep(5)
+                        
+                        # Check if we should process any file changes while waiting
+                        if self.interrupted:
                             line = ""
-                            import time
-                            time.sleep(0.1)
+                            if self.file_watcher:
+                                cmd = self.file_watcher.process_changes()
+                                return cmd
                             continue
+                            
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from file {input_pipe}: {e}")
-                        line = ""
-                        # Sleep to avoid tight loop
+                        # Wait 5 seconds before trying again
                         import time
-                        time.sleep(0.1)
+                        time.sleep(5)
                         continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
