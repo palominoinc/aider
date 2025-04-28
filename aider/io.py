@@ -847,7 +847,16 @@ class InputOutput:
     def ai_output(self, content):
         # Use Redis for messaging if enabled
         if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
-            self.redis_messaging.send_ai_output(content)
+            # If agent ID is ai-coder, send to ai-analyst and vice versa
+            target_agent = None
+            if self.redis_messaging.agent_id == "ai-coder":
+                target_agent = "ai-analyst"
+            elif self.redis_messaging.agent_id == "ai-analyst":
+                target_agent = "ai-coder"
+                
+            self.redis_messaging.send_ai_output(content, target_agent=target_agent)
+            if target_agent:
+                self.tool_output(f"Sent output to {target_agent}", log_only=False)
                 
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
