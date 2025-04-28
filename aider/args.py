@@ -799,16 +799,6 @@ def get_parser(default_config_files, git_root):
         "--editor",
         help="Specify which editor to use for the /editor command",
     )
-    group.add_argument(
-        "--input-pipe",
-        metavar="PIPE_PATH",
-        help="Read input from a Unix pipe instead of stdin (input will not be echoed)",
-    )
-    group.add_argument(
-        "--output-pipe",
-        metavar="PIPE_PATH",
-        help="Write output messages to a Unix pipe instead of stdout",
-    )
 
     ##########
     group = parser.add_argument_group("Redis messaging")

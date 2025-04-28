@@ -272,7 +272,7 @@ class InputOutput:
         redis_url="redis://localhost:6379/0",
         redis_channel_prefix="aider:",
         agent_id=None,
-        redis_verbose=False,
+        redis_verbose=False
     ):
         self.placeholder = None
         self.interrupted = False
@@ -289,8 +289,6 @@ class InputOutput:
         # Initialize Redis messaging if enabled
         self.use_redis = use_redis
         self.redis_messaging = None
-        self.output_pipe = output_pipe  # Keep for backward compatibility
-        
         if self.use_redis:
             # Generate a unique agent ID if not provided
             if agent_id is None:
@@ -311,17 +309,6 @@ class InputOutput:
             else:
                 print("Warning: Failed to connect to Redis. Falling back to standard I/O.")
                 self.use_redis = False
-        
-        # For backward compatibility
-        if self.output_pipe and not self.use_redis:
-            # Make sure the file exists but don't truncate it
-            try:
-                # Use 'a' mode to create the file if it doesn't exist without truncating
-                with open(output_pipe, 'a') as f:
-                    pass
-                print(f"Initialized output file at {output_pipe}")
-            except Exception as e:
-                print(f"Error initializing output file {output_pipe}: {e}")
 
         no_color = os.environ.get("NO_COLOR")
         if no_color is not None and no_color != "":
@@ -569,7 +556,6 @@ class InputOutput:
         commands,
         abs_read_only_fnames=None,
         edit_format=None,
-        input_pipe=None,
     ):
         self.rule()
 
@@ -680,99 +666,43 @@ class InputOutput:
                 show = self.prompt_prefix
 
             try:
-                if input_pipe or self.use_redis:
-                    # Use Redis for messaging if enabled, otherwise fall back to file-based
-                    if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
-                        # Only show the rule() once at the beginning, not on every poll
-                        if not hasattr(self, '_showed_redis_rule'):
-                            self._showed_redis_rule = True
-                        else:
-                            # Remove the rule that was added at the beginning of get_input
-                            print("\033[1A\033[K", end="")  # Move up one line and clear it
-                        
-                        # Check for messages in input queue (with 5 second timeout)
-                        message = self.redis_messaging.pop_message(
-                            self.redis_messaging.get_input_queue(), 
-                            timeout=5
-                        )
-                        
-                        # If no message in queue, check subscribed channels
-                        if not message:
-                            message = self.redis_messaging.get_message(timeout=5)
-                        
-                        if message and message.get('type') == 'user_input':
-                            line = message.get('content', '')
-                            if line:
-                                sender = message.get('from_agent', 'unknown')
-                                self.tool_output(f"Received from {sender}: {line}")
-                                inp = line
-                                break  # Exit the loop with the input
-                        
-                        # Check if we should process any file changes while waiting
-                        if self.interrupted:
-                            line = ""
-                            if self.file_watcher:
-                                cmd = self.file_watcher.process_changes()
-                                return cmd
-                            continue
-                        
-                        # Set line to empty string to avoid UnboundLocalError
+                if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
+                    # Only show the rule() once at the beginning, not on every poll
+                    if not hasattr(self, '_showed_redis_rule'):
+                        self._showed_redis_rule = True
+                    else:
+                        # Remove the rule that was added at the beginning of get_input
+                        print("\033[1A\033[K", end="")  # Move up one line and clear it
+                    
+                    # Check for messages in input queue (with 5 second timeout)
+                    message = self.redis_messaging.pop_message(
+                        self.redis_messaging.get_input_queue(), 
+                        timeout=5
+                    )
+                    
+                    # If no message in queue, check subscribed channels
+                    if not message:
+                        message = self.redis_messaging.get_message(timeout=5)
+                    
+                    if message and message.get('type') == 'user_input':
+                        line = message.get('content', '')
+                        if line:
+                            sender = message.get('from_agent', 'unknown')
+                            self.tool_output(f"Received from {sender}: {line}")
+                            inp = line
+                            break  # Exit the loop with the input
+                    
+                    # Check if we should process any file changes while waiting
+                    if self.interrupted:
                         line = ""
+                        if self.file_watcher:
+                            cmd = self.file_watcher.process_changes()
+                            return cmd
                         continue
                     
-                    # Fall back to file-based input if Redis is not available
-                    elif input_pipe:
-                        # Read from the input file instead of stdin, polling every 5 seconds
-                        # Only show the rule() once at the beginning, not on every poll
-                        if not hasattr(self, '_showed_input_pipe_rule'):
-                            self._showed_input_pipe_rule = True
-                        else:
-                            # Remove the rule that was added at the beginning of get_input
-                            print("\033[1A\033[K", end="")  # Move up one line and clear it
-                            
-                        try:
-                            # Check if the file exists and has content
-                            line = ""
-                            if os.path.exists(input_pipe) and os.path.getsize(input_pipe) > 0:
-                                # Read the entire file content
-                                with open(input_pipe, 'r') as f:
-                                    buffer = f.read()
-                                
-                                # Clear the file after reading
-                                with open(input_pipe, 'w') as f:
-                                    pass
-                                    
-                                line = buffer.rstrip('\n')
-                                if line:
-                                    self.tool_output(f"Received: {line}")
-                                    inp = line
-                                    break  # Exit the loop with the input
-                            
-                            # If we reach here, either the file doesn't exist or is empty
-                            # Wait 5 seconds before checking again
-                            import time
-                            time.sleep(5)
-                            
-                            # Check if we should process any file changes while waiting
-                            if self.interrupted:
-                                line = ""
-                                if self.file_watcher:
-                                    cmd = self.file_watcher.process_changes()
-                                    return cmd
-                                continue
-                            
-                            # Set line to empty string to avoid UnboundLocalError
-                            line = ""
-                            continue
-                                
-                        except (FileNotFoundError, PermissionError) as e:
-                            self.tool_error(f"Error reading from file {input_pipe}: {e}")
-                            # Wait 5 seconds before trying again
-                            import time
-                            time.sleep(5)
-                            # Set line to empty string to avoid UnboundLocalError
-                            line = ""
-                            continue
+                    # Set line to empty string to avoid UnboundLocalError
+                    line = ""
+                    continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
                     default = self.placeholder or ""
@@ -925,16 +855,6 @@ class InputOutput:
         # Use Redis for messaging if enabled
         if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
             self.redis_messaging.send_ai_output(content)
-        # Fall back to file-based output if Redis is not available
-        elif self.output_pipe and content:
-            try:
-                # Open the file in append mode, write, and close it immediately
-                with open(self.output_pipe, 'a') as f:
-                    f.write(f"AI: {content}\n")
-                print(f"Wrote AI response to {self.output_pipe}")
-                f.close()
-            except Exception as e:
-                print(f"Error writing to output file: {e}")
                 
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
@@ -957,7 +877,6 @@ class InputOutput:
         explicit_yes_required=False,
         group=None,
         allow_never=False,
-        input_pipe=None,
     ):
         self.num_user_asks += 1
 
@@ -1016,10 +935,6 @@ class InputOutput:
         elif group and group.preference:
             res = group.preference
             self.user_input(f"{question}{res}", log_only=False)
-        elif input_pipe:
-            # For input pipe, always use the default response without waiting
-            res = default
-            self.tool_output(f"Using default response '{default}' for input pipe")
         else:
             while True:
                 try:
@@ -1075,7 +990,7 @@ class InputOutput:
         return is_yes
 
     @restore_multiline
-    def prompt_ask(self, question, default="", subject=None, input_pipe=None):
+    def prompt_ask(self, question, default="", subject=None):
         self.num_user_asks += 1
 
         # Ring the bell if needed
@@ -1091,10 +1006,6 @@ class InputOutput:
             res = "yes"
         elif self.yes is False:
             res = "no"
-        elif input_pipe:
-            # For input pipe, always use the default response without waiting
-            res = default
-            self.tool_output(f"Using default response '{default}' for input pipe")
         else:
             try:
                 if self.prompt_session:
@@ -1129,15 +1040,6 @@ class InputOutput:
         # Use Redis for messaging if enabled
         if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected() and message:
             self.redis_messaging.send_tool_output(str(message))
-        # Fall back to file-based output if Redis is not available
-        elif self.output_pipe and message:
-            try:
-                # Open the file in append mode, write, and close it immediately
-                with open(self.output_pipe, 'a') as f:
-                    f.write(f"TOOL: {message}\n")
-                print(f"Wrote tool message to {self.output_pipe}")
-            except Exception as e:
-                print(f"Error writing to output file: {e}")
 
         if not isinstance(message, Text):
             message = Text(message)

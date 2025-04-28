@@ -875,8 +875,7 @@ class Coder:
             self.get_addable_relative_files(),
             self.commands,
             self.abs_read_only_fnames,
-            edit_format=edit_format,
-            input_pipe=self.commands.args.input_pipe if hasattr(self.commands.args, 'input_pipe') else None,  
+            edit_format=edit_format
         )
 
     def preproc_user_input(self, inp):
