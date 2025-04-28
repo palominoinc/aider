@@ -292,7 +292,6 @@ class InputOutput:
                 
                 # Open the pipe in non-blocking write mode
                 import fcntl
-                import os
                 
                 # Open the pipe in write mode
                 self.output_pipe_file = open(output_pipe, 'w')
