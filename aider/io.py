@@ -820,16 +820,6 @@ class InputOutput:
         if not log_only:
             self.display_user_input(inp)
 
-        # Write to output file if configured
-        if self.output_pipe and inp:
-            try:
-                # Open the file, write, and close it immediately
-                with open(self.output_pipe, 'w') as f:
-                    f.write(f"USER: {inp}\n")
-                print(f"Wrote user input to {self.output_pipe}")
-            except Exception as e:
-                print(f"Error writing to output file: {e}")
-
         prefix = "####"
         if inp:
             hist = inp.splitlines()
