@@ -1084,7 +1084,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     # Suppress all startup messages
     if not args.no_welcome:
-        io.tool_output("Hello, this is the AI CODER Agent.", bold=True)
+        io.tool_output("Hello, this is the AI ANALYST Agent.", bold=True)
 
     if args.load:
         commands.cmd_load(args.load)
