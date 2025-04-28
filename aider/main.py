@@ -568,7 +568,12 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             multiline_mode=args.multiline,
             notifications=args.notifications,
             notifications_command=args.notifications_command,
-            output_pipe=args.output_pipe,
+            # Redis messaging parameters
+            use_redis=args.use_redis,
+            redis_url=args.redis_url,
+            redis_channel_prefix=args.redis_channel_prefix,
+            agent_id=args.agent_id,
+            redis_verbose=args.redis_verbose,
         )
 
     io = get_io(args.pretty)

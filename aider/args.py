@@ -799,15 +799,38 @@ def get_parser(default_config_files, git_root):
         "--editor",
         help="Specify which editor to use for the /editor command",
     )
+
+    ##########
+    group = parser.add_argument_group("Redis messaging")
     group.add_argument(
-        "--input-pipe",
-        metavar="PIPE_PATH",
-        help="Read input from a Unix pipe instead of stdin (input will not be echoed)",
+        "--use-redis",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable/disable Redis messaging (default: False)",
     )
     group.add_argument(
-        "--output-pipe",
-        metavar="PIPE_PATH",
-        help="Write output messages to a Unix pipe instead of stdout",
+        "--redis-url",
+        metavar="REDIS_URL",
+        default="redis://localhost:6379/0",
+        help="Redis connection URL (default: redis://localhost:6379/0)",
+    )
+    group.add_argument(
+        "--redis-channel-prefix",
+        metavar="PREFIX",
+        default="aider:",
+        help="Prefix for Redis channels (default: aider:)",
+    )
+    group.add_argument(
+        "--agent-id",
+        metavar="AGENT_ID",
+        default=None,
+        help="Unique identifier for this agent instance (default: auto-generated)",
+    )
+    group.add_argument(
+        "--redis-verbose",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable verbose Redis messaging logs (default: False)",
     )
 
     ##########
