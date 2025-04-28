@@ -279,9 +279,10 @@ class InputOutput:
             
         self.output_pipe = output_pipe
         if self.output_pipe:
-            # Make sure the file exists
+            # Make sure the file exists but don't truncate it
             try:
-                with open(output_pipe, 'w') as f:
+                # Use 'a' mode to create the file if it doesn't exist without truncating
+                with open(output_pipe, 'a') as f:
                     pass
                 print(f"Initialized output file at {output_pipe}")
             except Exception as e:
@@ -838,8 +839,8 @@ class InputOutput:
         # Write to output file if configured
         if self.output_pipe and content:
             try:
-                # Open the file, write, and close it immediately
-                with open(self.output_pipe, 'w') as f:
+                # Open the file in append mode, write, and close it immediately
+                with open(self.output_pipe, 'a') as f:
                     f.write(f"AI: {content}\n")
                 print(f"Wrote AI response to {self.output_pipe}")
             except Exception as e:
@@ -1038,8 +1039,8 @@ class InputOutput:
         # Write to output file if configured
         if self.output_pipe and message:
             try:
-                # Open the file, write, and close it immediately
-                with open(self.output_pipe, 'w') as f:
+                # Open the file in append mode, write, and close it immediately
+                with open(self.output_pipe, 'a') as f:
                     f.write(f"TOOL: {message}\n")
                 print(f"Wrote tool message to {self.output_pipe}")
             except Exception as e:
