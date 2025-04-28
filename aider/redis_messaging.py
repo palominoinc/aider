@@ -200,17 +200,19 @@ class RedisMessaging:
             target_agent: Target agent ID or None for broadcast
         """
         message = {
-            # 'type': 'ai_output',
-            'type': 'user_input',
+            'type': 'user_input',  # Send as user input so the target agent processes it
             'content': content,
             'from_agent': self.agent_id,
             'timestamp': time.time()
         }
         
         if target_agent:
-            # Send to specific agent's output queue
-            queue_name = f"{self.channel_prefix}output_queue:{target_agent}"
+            # Send to specific agent's input queue (not output queue)
+            # This ensures the message is processed as user input by the target agent
+            queue_name = f"{self.channel_prefix}input_queue:{target_agent}"
             self.push_message(queue_name, message)
+            if self.verbose:
+                print(f"Sent AI output to agent {target_agent}")
         else:
             # Broadcast to all agents
             self.publish(self.get_broadcast_channel(), message)
