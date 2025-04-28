@@ -5,12 +5,14 @@ import shutil
 import signal
 import subprocess
 import time
+import uuid
 import webbrowser
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from typing import Optional
 
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
 from prompt_toolkit.cursor_shapes import ModalCursorShapeConfig
@@ -37,6 +39,7 @@ from aider.mdstream import MarkdownStream
 
 from .dump import dump  # noqa: F401
 from .editor import pipe_editor
+from .redis_messaging import RedisMessaging
 from .utils import is_image_file
 
 # Constants
@@ -264,6 +267,12 @@ class InputOutput:
         notifications=False,
         notifications_command=None,
         output_pipe=None,
+        # Redis messaging parameters
+        use_redis=False,
+        redis_url="redis://localhost:6379/0",
+        redis_channel_prefix="aider:",
+        agent_id=None,
+        redis_verbose=False,
     ):
         self.placeholder = None
         self.interrupted = False
@@ -277,8 +286,34 @@ class InputOutput:
         else:
             self.notifications_command = notifications_command
             
-        self.output_pipe = output_pipe
-        if self.output_pipe:
+        # Initialize Redis messaging if enabled
+        self.use_redis = use_redis
+        self.redis_messaging = None
+        self.output_pipe = output_pipe  # Keep for backward compatibility
+        
+        if self.use_redis:
+            # Generate a unique agent ID if not provided
+            if agent_id is None:
+                agent_id = f"agent:{uuid.uuid4()}"
+            
+            self.redis_messaging = RedisMessaging(
+                redis_url=redis_url,
+                channel_prefix=redis_channel_prefix,
+                agent_id=agent_id,
+                verbose=redis_verbose
+            )
+            
+            # Subscribe to input channel and broadcast channel
+            if self.redis_messaging.is_connected():
+                self.redis_messaging.subscribe(self.redis_messaging.get_input_channel())
+                self.redis_messaging.subscribe(self.redis_messaging.get_broadcast_channel())
+                print(f"Redis messaging enabled. Agent ID: {agent_id}")
+            else:
+                print("Warning: Failed to connect to Redis. Falling back to standard I/O.")
+                self.use_redis = False
+        
+        # For backward compatibility
+        if self.output_pipe and not self.use_redis:
             # Make sure the file exists but don't truncate it
             try:
                 # Use 'a' mode to create the file if it doesn't exist without truncating
@@ -645,37 +680,33 @@ class InputOutput:
                 show = self.prompt_prefix
 
             try:
-                if input_pipe:
-                    # Read from the input file instead of stdin, polling every 5 seconds
-                    # Only show the rule() once at the beginning, not on every poll
-                    if not hasattr(self, '_showed_input_pipe_rule'):
-                        self._showed_input_pipe_rule = True
-                    else:
-                        # Remove the rule that was added at the beginning of get_input
-                        print("\033[1A\033[K", end="")  # Move up one line and clear it
+                if input_pipe or self.use_redis:
+                    # Use Redis for messaging if enabled, otherwise fall back to file-based
+                    if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
+                        # Only show the rule() once at the beginning, not on every poll
+                        if not hasattr(self, '_showed_redis_rule'):
+                            self._showed_redis_rule = True
+                        else:
+                            # Remove the rule that was added at the beginning of get_input
+                            print("\033[1A\033[K", end="")  # Move up one line and clear it
                         
-                    try:
-                        # Check if the file exists and has content
-                        line = ""
-                        if os.path.exists(input_pipe) and os.path.getsize(input_pipe) > 0:
-                            # Read the entire file content
-                            with open(input_pipe, 'r') as f:
-                                buffer = f.read()
-                            
-                            # Clear the file after reading
-                            with open(input_pipe, 'w') as f:
-                                pass
-                                
-                            line = buffer.rstrip('\n')
+                        # Check for messages in input queue (with 5 second timeout)
+                        message = self.redis_messaging.pop_message(
+                            self.redis_messaging.get_input_queue(), 
+                            timeout=5
+                        )
+                        
+                        # If no message in queue, check subscribed channels
+                        if not message:
+                            message = self.redis_messaging.get_message(timeout=5)
+                        
+                        if message and message.get('type') == 'user_input':
+                            line = message.get('content', '')
                             if line:
-                                self.tool_output(f"Received: {line}")
+                                sender = message.get('from_agent', 'unknown')
+                                self.tool_output(f"Received from {sender}: {line}")
                                 inp = line
                                 break  # Exit the loop with the input
-                        
-                        # If we reach here, either the file doesn't exist or is empty
-                        # Wait 5 seconds before checking again
-                        import time
-                        time.sleep(5)
                         
                         # Check if we should process any file changes while waiting
                         if self.interrupted:
@@ -688,15 +719,60 @@ class InputOutput:
                         # Set line to empty string to avoid UnboundLocalError
                         line = ""
                         continue
+                    
+                    # Fall back to file-based input if Redis is not available
+                    elif input_pipe:
+                        # Read from the input file instead of stdin, polling every 5 seconds
+                        # Only show the rule() once at the beginning, not on every poll
+                        if not hasattr(self, '_showed_input_pipe_rule'):
+                            self._showed_input_pipe_rule = True
+                        else:
+                            # Remove the rule that was added at the beginning of get_input
+                            print("\033[1A\033[K", end="")  # Move up one line and clear it
                             
-                    except (FileNotFoundError, PermissionError) as e:
-                        self.tool_error(f"Error reading from file {input_pipe}: {e}")
-                        # Wait 5 seconds before trying again
-                        import time
-                        time.sleep(5)
-                        # Set line to empty string to avoid UnboundLocalError
-                        line = ""
-                        continue
+                        try:
+                            # Check if the file exists and has content
+                            line = ""
+                            if os.path.exists(input_pipe) and os.path.getsize(input_pipe) > 0:
+                                # Read the entire file content
+                                with open(input_pipe, 'r') as f:
+                                    buffer = f.read()
+                                
+                                # Clear the file after reading
+                                with open(input_pipe, 'w') as f:
+                                    pass
+                                    
+                                line = buffer.rstrip('\n')
+                                if line:
+                                    self.tool_output(f"Received: {line}")
+                                    inp = line
+                                    break  # Exit the loop with the input
+                            
+                            # If we reach here, either the file doesn't exist or is empty
+                            # Wait 5 seconds before checking again
+                            import time
+                            time.sleep(5)
+                            
+                            # Check if we should process any file changes while waiting
+                            if self.interrupted:
+                                line = ""
+                                if self.file_watcher:
+                                    cmd = self.file_watcher.process_changes()
+                                    return cmd
+                                continue
+                            
+                            # Set line to empty string to avoid UnboundLocalError
+                            line = ""
+                            continue
+                                
+                        except (FileNotFoundError, PermissionError) as e:
+                            self.tool_error(f"Error reading from file {input_pipe}: {e}")
+                            # Wait 5 seconds before trying again
+                            import time
+                            time.sleep(5)
+                            # Set line to empty string to avoid UnboundLocalError
+                            line = ""
+                            continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
                     default = self.placeholder or ""
@@ -846,8 +922,11 @@ class InputOutput:
     # OUTPUT
 
     def ai_output(self, content):
-        # Write to output file if configured
-        if self.output_pipe and content:
+        # Use Redis for messaging if enabled
+        if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
+            self.redis_messaging.send_ai_output(content)
+        # Fall back to file-based output if Redis is not available
+        elif self.output_pipe and content:
             try:
                 # Open the file in append mode, write, and close it immediately
                 with open(self.output_pipe, 'a') as f:
@@ -1047,8 +1126,11 @@ class InputOutput:
                 hist = message.strip() if strip else message
                 self.append_chat_history(hist, linebreak=True, blockquote=True)
 
-        # Write to output file if configured
-        if self.output_pipe and message:
+        # Use Redis for messaging if enabled
+        if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected() and message:
+            self.redis_messaging.send_tool_output(str(message))
+        # Fall back to file-based output if Redis is not available
+        elif self.output_pipe and message:
             try:
                 # Open the file in append mode, write, and close it immediately
                 with open(self.output_pipe, 'a') as f:
@@ -1214,8 +1296,55 @@ class InputOutput:
                 print(f"Warning: Unable to write to chat history file {self.chat_history_file}.")
                 print(err)
                 self.chat_history_file = None  # Disable further attempts to write
+    
+    def get_available_agents(self):
+        """Get a list of available agent IDs."""
+        if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
+            return self.redis_messaging.get_available_agents()
+        return []
+    
+    def send_to_agent(self, agent_id, message, message_type="user_input"):
+        """Send a message to a specific agent."""
+        if not self.use_redis or not self.redis_messaging or not self.redis_messaging.is_connected():
+            self.tool_error(f"Redis messaging not available. Cannot send to agent {agent_id}.")
+            return False
+            
+        if message_type == "user_input":
+            self.redis_messaging.send_user_input(message, target_agent=agent_id)
+        elif message_type == "ai_output":
+            self.redis_messaging.send_ai_output(message, target_agent=agent_id)
+        elif message_type == "tool_output":
+            self.redis_messaging.send_tool_output(message, target_agent=agent_id)
+        else:
+            self.tool_error(f"Unknown message type: {message_type}")
+            return False
+            
+        return True
+    
+    def broadcast_message(self, message, message_type="user_input"):
+        """Broadcast a message to all agents."""
+        if not self.use_redis or not self.redis_messaging or not self.redis_messaging.is_connected():
+            self.tool_error("Redis messaging not available. Cannot broadcast message.")
+            return False
+            
+        if message_type == "user_input":
+            self.redis_messaging.send_user_input(message)
+        elif message_type == "ai_output":
+            self.redis_messaging.send_ai_output(message)
+        elif message_type == "tool_output":
+            self.redis_messaging.send_tool_output(message)
+        else:
+            self.tool_error(f"Unknown message type: {message_type}")
+            return False
+            
+        return True
                 
 
+    def cleanup(self):
+        """Clean up resources like Redis connections."""
+        if self.use_redis and self.redis_messaging:
+            self.redis_messaging.cleanup()
+    
     def format_files_for_input(self, rel_fnames, rel_read_only_fnames):
         if not self.pretty:
             read_only_files = []
