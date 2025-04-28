@@ -661,6 +661,7 @@ class InputOutput:
                             line = buffer.rstrip('\n')
                             if line:
                                 self.tool_output(f"Received: {line}")
+                                inp = line
                                 break  # Exit the loop with the input
                         
                         # If we reach here, either the file doesn't exist or is empty
