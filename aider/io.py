@@ -682,7 +682,6 @@ class InputOutput:
                         line = message.get('content', '')
                         if line:
                             sender = message.get('from_agent', 'unknown')
-                            self.tool_output(f"Received from {sender}: {line}")
                             inp = line
                             break  # Exit the loop with the input
                     
@@ -929,7 +928,6 @@ class InputOutput:
         elif self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
             # For Redis messaging, always use the default response without waiting
             res = default
-            self.tool_output(f"Using default response '{default}' for Redis messaging")
         elif group and group.preference:
             res = group.preference
             self.user_input(f"{question}{res}", log_only=False)
@@ -1007,7 +1005,6 @@ class InputOutput:
         elif self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
             # For Redis messaging, always use the default response without waiting
             res = default
-            self.tool_output(f"Using default response '{default}' for Redis messaging")
         else:
             try:
                 if self.prompt_session:
