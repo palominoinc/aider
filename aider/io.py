@@ -278,14 +278,14 @@ class InputOutput:
             self.notifications_command = notifications_command
             
         self.output_pipe = output_pipe
-        self.output_pipe_file = None
         if self.output_pipe:
+            # Make sure the file exists
             try:
-                # Open the file in write mode (will create if doesn't exist)
-                self.output_pipe_file = open(output_pipe, 'w')
-                print(f"Opened output file at {output_pipe}")
+                with open(output_pipe, 'w') as f:
+                    pass
+                print(f"Initialized output file at {output_pipe}")
             except Exception as e:
-                print(f"Error setting up output file {output_pipe}: {e}")
+                print(f"Error initializing output file {output_pipe}: {e}")
 
         no_color = os.environ.get("NO_COLOR")
         if no_color is not None and no_color != "":
@@ -814,25 +814,18 @@ class InputOutput:
 
         self.console.print(Text(inp), **style)
 
-    def close_output_pipe(self):
-        """Close the output file if it's open."""
-        if self.output_pipe_file:
-            try:
-                self.output_pipe_file.close()
-                self.output_pipe_file = None
-                print(f"Closed output file at {self.output_pipe}")
-            except Exception as e:
-                print(f"Error closing output file: {e}")
 
     def user_input(self, inp, log_only=True):
         if not log_only:
             self.display_user_input(inp)
 
         # Write to output file if configured
-        if self.output_pipe_file and inp:
+        if self.output_pipe and inp:
             try:
-                self.output_pipe_file.write(f"USER: {inp}\n")
-                self.output_pipe_file.flush()
+                # Open the file, write, and close it immediately
+                with open(self.output_pipe, 'w') as f:
+                    f.write(f"USER: {inp}\n")
+                print(f"Wrote user input to {self.output_pipe}")
             except Exception as e:
                 print(f"Error writing to output file: {e}")
 
@@ -852,19 +845,17 @@ class InputOutput:
 
     def ai_output(self, content):
         # Write to output file if configured
-        if self.output_pipe_file and content:
+        if self.output_pipe and content:
             try:
-                self.output_pipe_file.write(f"AI: {content}\n")
-                self.output_pipe_file.flush()
+                # Open the file, write, and close it immediately
+                with open(self.output_pipe, 'w') as f:
+                    f.write(f"AI: {content}\n")
+                print(f"Wrote AI response to {self.output_pipe}")
             except Exception as e:
                 print(f"Error writing to output file: {e}")
                 
         hist = "\n" + content.strip() + "\n\n"
         self.append_chat_history(hist)
-        
-        # Close the output pipe after sending the AI's response
-        # This allows the reading process to be unblocked
-        self.close_output_pipe()
 
     def offer_url(self, url, prompt="Open URL for more info?", allow_never=True):
         """Offer to open a URL in the browser, returns True if opened."""
@@ -1054,10 +1045,12 @@ class InputOutput:
                 self.append_chat_history(hist, linebreak=True, blockquote=True)
 
         # Write to output file if configured
-        if self.output_pipe_file and message:
+        if self.output_pipe and message:
             try:
-                self.output_pipe_file.write(f"TOOL: {message}\n")
-                self.output_pipe_file.flush()
+                # Open the file, write, and close it immediately
+                with open(self.output_pipe, 'w') as f:
+                    f.write(f"TOOL: {message}\n")
+                print(f"Wrote tool message to {self.output_pipe}")
             except Exception as e:
                 print(f"Error writing to output file: {e}")
 
@@ -1219,9 +1212,6 @@ class InputOutput:
                 print(err)
                 self.chat_history_file = None  # Disable further attempts to write
                 
-    def cleanup(self):
-        """Clean up resources before exiting."""
-        self.close_output_pipe()
 
     def format_files_for_input(self, rel_fnames, rel_read_only_fnames):
         if not self.pretty:
