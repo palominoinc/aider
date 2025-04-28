@@ -1047,7 +1047,13 @@ class InputOutput:
 
         # Use Redis for messaging if enabled
         if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected() and message:
-            self.redis_messaging.send_tool_output(str(message))
+            # Only send to the other agent if this is the ai-coder agent
+            if self.redis_messaging.agent_id == "ai-coder":
+                target_agent = "ai-analyst"
+                self.redis_messaging.send_tool_output(str(message), target_agent=target_agent)
+            else:
+                # For other agents, just broadcast as before
+                self.redis_messaging.send_tool_output(str(message))
 
         if not isinstance(message, Text):
             message = Text(message)
