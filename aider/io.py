@@ -279,9 +279,10 @@ class InputOutput:
             
         self.output_pipe = output_pipe
         if self.output_pipe:
-            # Make sure the file exists
+            # Make sure the file exists but don't truncate it
             try:
-                with open(output_pipe, 'w') as f:
+                # Use 'a' mode to create the file if it doesn't exist without truncating
+                with open(output_pipe, 'a') as f:
                     pass
                 print(f"Initialized output file at {output_pipe}")
             except Exception as e:
@@ -646,6 +647,13 @@ class InputOutput:
             try:
                 if input_pipe:
                     # Read from the input file instead of stdin, polling every 5 seconds
+                    # Only show the rule() once at the beginning, not on every poll
+                    if not hasattr(self, '_showed_input_pipe_rule'):
+                        self._showed_input_pipe_rule = True
+                    else:
+                        # Remove the rule that was added at the beginning of get_input
+                        print("\033[1A\033[K", end="")  # Move up one line and clear it
+                        
                     try:
                         # Check if the file exists and has content
                         line = ""
@@ -676,7 +684,11 @@ class InputOutput:
                                 cmd = self.file_watcher.process_changes()
                                 return cmd
                             continue
-                                                    
+                        
+                        # Set line to empty string to avoid UnboundLocalError
+                        line = ""
+                        continue
+                            
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from file {input_pipe}: {e}")
                         # Wait 5 seconds before trying again
@@ -687,7 +699,6 @@ class InputOutput:
                         continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
-                    self.tool_output(f"No input pipe:")
                     default = self.placeholder or ""
                     self.placeholder = None
 
@@ -838,8 +849,8 @@ class InputOutput:
         # Write to output file if configured
         if self.output_pipe and content:
             try:
-                # Open the file, write, and close it immediately
-                with open(self.output_pipe, 'w') as f:
+                # Open the file in append mode, write, and close it immediately
+                with open(self.output_pipe, 'a') as f:
                     f.write(f"AI: {content}\n")
                 print(f"Wrote AI response to {self.output_pipe}")
             except Exception as e:
@@ -1038,8 +1049,8 @@ class InputOutput:
         # Write to output file if configured
         if self.output_pipe and message:
             try:
-                # Open the file, write, and close it immediately
-                with open(self.output_pipe, 'w') as f:
+                # Open the file in append mode, write, and close it immediately
+                with open(self.output_pipe, 'a') as f:
                     f.write(f"TOOL: {message}\n")
                 print(f"Wrote tool message to {self.output_pipe}")
             except Exception as e:
