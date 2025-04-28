@@ -647,6 +647,13 @@ class InputOutput:
             try:
                 if input_pipe:
                     # Read from the input file instead of stdin, polling every 5 seconds
+                    # Only show the rule() once at the beginning, not on every poll
+                    if not hasattr(self, '_showed_input_pipe_rule'):
+                        self._showed_input_pipe_rule = True
+                    else:
+                        # Remove the rule that was added at the beginning of get_input
+                        print("\033[1A\033[K", end="")  # Move up one line and clear it
+                        
                     try:
                         # Check if the file exists and has content
                         line = ""
@@ -677,7 +684,11 @@ class InputOutput:
                                 cmd = self.file_watcher.process_changes()
                                 return cmd
                             continue
-                                                    
+                        
+                        # Set line to empty string to avoid UnboundLocalError
+                        line = ""
+                        continue
+                            
                     except (FileNotFoundError, PermissionError) as e:
                         self.tool_error(f"Error reading from file {input_pipe}: {e}")
                         # Wait 5 seconds before trying again
@@ -688,7 +699,6 @@ class InputOutput:
                         continue
                 elif self.prompt_session:
                     # Use placeholder if set, then clear it
-                    self.tool_output(f"No input pipe:")
                     default = self.placeholder or ""
                     self.placeholder = None
 
