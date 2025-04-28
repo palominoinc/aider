@@ -667,13 +667,7 @@ class InputOutput:
 
             try:
                 if self.use_redis and self.redis_messaging and self.redis_messaging.is_connected():
-                    # Only show the rule() once at the beginning, not on every poll
-                    if not hasattr(self, '_showed_redis_rule'):
-                        self._showed_redis_rule = True
-                    else:
-                        # Remove the rule that was added at the beginning of get_input
-                        print("\033[1A\033[K", end="")  # Move up one line and clear it
-                    
+                   
                     # Check for messages in input queue (with 5 second timeout)
                     message = self.redis_messaging.pop_message(
                         self.redis_messaging.get_input_queue(), 

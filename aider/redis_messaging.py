@@ -177,7 +177,7 @@ class RedisMessaging:
             target_agent: Target agent ID or None for broadcast
         """
         message = {
-            'type': 'user_input',
+            'type': 'agent_message',
             'content': content,
             'from_agent': self.agent_id,
             'timestamp': time.time()
@@ -200,7 +200,8 @@ class RedisMessaging:
             target_agent: Target agent ID or None for broadcast
         """
         message = {
-            'type': 'ai_output',
+            # 'type': 'ai_output',
+            'type': 'user_input',
             'content': content,
             'from_agent': self.agent_id,
             'timestamp': time.time()
