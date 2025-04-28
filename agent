@@ -28,6 +28,18 @@ REDIS_URL=${REDIS_URL:-"redis://localhost:6379/0"}
 REDIS_PREFIX=${REDIS_PREFIX:-"aider:"}
 REDIS_VERBOSE=${REDIS_VERBOSE:-"false"}
 
+# Convert boolean strings to actual boolean flags
+if [ "$USE_REDIS" = "true" ]; then
+  REDIS_FLAGS="--use-redis"
+else
+  REDIS_FLAGS="--no-use-redis"
+fi
+
+if [ "$REDIS_VERBOSE" = "true" ]; then
+  REDIS_VERBOSE_FLAG="--redis-verbose"
+else
+  REDIS_VERBOSE_FLAG="--no-redis-verbose"
+fi
 
 $AIDER \
   --env-file $ENV \
@@ -35,5 +47,10 @@ $AIDER \
   --chat-history-file $CHAT_HISTORY_FILE \
   --llm-history-file $LLM_HISTORY_FILE \
   --input-history-file $CHAT_HISTORY_FILE \
+  $REDIS_FLAGS \
+  --redis-url="$REDIS_URL" \
+  --redis-channel-prefix="$REDIS_PREFIX" \
+  --agent-id="$AGENT_ID" \
+  $REDIS_VERBOSE_FLAG \
   $*
 

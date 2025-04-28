@@ -811,6 +811,39 @@ def get_parser(default_config_files, git_root):
     )
 
     ##########
+    group = parser.add_argument_group("Redis messaging")
+    group.add_argument(
+        "--use-redis",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable/disable Redis messaging (default: False)",
+    )
+    group.add_argument(
+        "--redis-url",
+        metavar="REDIS_URL",
+        default="redis://localhost:6379/0",
+        help="Redis connection URL (default: redis://localhost:6379/0)",
+    )
+    group.add_argument(
+        "--redis-channel-prefix",
+        metavar="PREFIX",
+        default="aider:",
+        help="Prefix for Redis channels (default: aider:)",
+    )
+    group.add_argument(
+        "--agent-id",
+        metavar="AGENT_ID",
+        default=None,
+        help="Unique identifier for this agent instance (default: auto-generated)",
+    )
+    group.add_argument(
+        "--redis-verbose",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable verbose Redis messaging logs (default: False)",
+    )
+
+    ##########
     group = parser.add_argument_group("Deprecated model settings")
     # Add deprecated model shortcut arguments
     add_deprecated_model_args(parser, group)
