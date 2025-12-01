@@ -42,6 +42,7 @@ class MCPClient:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._session: Optional[ClientSession] = None
+        self._stdio_context = None
         self._read = None
         self._write = None
         self._connected = False
@@ -67,7 +68,14 @@ class MCPClient:
             self._connected = True
         except Exception as e:
             self._cleanup()
-            raise MCPConnectionError(f"Failed to connect to MCP server '{self.server_name}': {e}")
+            import traceback
+            error_details = f"{type(e).__name__}: {str(e)}"
+            if not str(e):
+                error_details = f"{type(e).__name__} (no message)"
+            raise MCPConnectionError(
+                f"Failed to connect to MCP server '{self.server_name}': {error_details}\n"
+                f"Traceback: {traceback.format_exc()}"
+            )
 
     def _run_event_loop(self):
         """Run the event loop in the background thread."""
@@ -82,8 +90,9 @@ class MCPClient:
             env=self.env if self.env else None
         )
 
-        # Create stdio client context
-        self._read, self._write = await stdio_client(server_params).__aenter__()
+        # Create stdio client context - keep reference to prevent garbage collection
+        self._stdio_context = stdio_client(server_params)
+        self._read, self._write = await self._stdio_context.__aenter__()
 
         # Create session
         self._session = ClientSession(self._read, self._write)
@@ -208,6 +217,10 @@ class MCPClient:
         if self._session:
             await self._session.__aexit__(None, None, None)
             self._session = None
+
+        if self._stdio_context:
+            await self._stdio_context.__aexit__(None, None, None)
+            self._stdio_context = None
 
     def _cleanup(self):
         """Clean up resources."""

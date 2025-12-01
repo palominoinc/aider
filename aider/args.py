@@ -616,7 +616,7 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--mcp-config",
         metavar="MCP_CONFIG_FILE",
-        help="Specify MCP servers configuration file",
+        help="Specify MCP servers configuration file (default: .aider.mcp.yml if exists)",
     ).complete = shtab.FILE
     group.add_argument(
         "--mcp-servers",
