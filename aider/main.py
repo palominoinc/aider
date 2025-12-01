@@ -970,6 +970,34 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     # Track auto-commits configuration
     analytics.event("auto_commits", enabled=bool(args.auto_commits))
 
+    # Initialize MCP service if enabled
+    mcp_service = None
+    if args.enable_mcp:
+        try:
+            from aider.mcp_service import MCPService
+
+            mcp_service = MCPService(
+                io=io,
+                config_file=args.mcp_config,
+                cli_servers=args.mcp_servers if args.mcp_servers else None,
+                verbose=args.verbose,
+            )
+            mcp_service.start_servers()
+            mcp_service.discover_tools()
+
+            if args.verbose:
+                connected = len(mcp_service.get_connected_servers())
+                total_tools = len(mcp_service.tools)
+                io.tool_output(f"MCP: Connected to {connected} server(s), {total_tools} tool(s) available")
+
+        except Exception as e:
+            io.tool_error(f"Failed to initialize MCP: {e}")
+            if not io.confirm_ask("Continue without MCP?"):
+                analytics.event("exit", reason="MCP initialization failed")
+                return 1
+            mcp_service = None
+
+    # Wrap in try-finally to ensure MCP cleanup
     try:
         coder = Coder.create(
             main_model=main_model,
@@ -1005,6 +1033,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             auto_copy_context=args.copy_paste,
             auto_accept_architect=args.auto_accept_architect,
             add_gitignore_files=args.add_gitignore_files,
+            mcp_service=mcp_service,
         )
     except UnknownEditFormat as err:
         io.tool_error(str(err))
@@ -1160,6 +1189,14 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
             if switch.kwargs.get("show_announcements") is not False and not args.quiet:
                 coder.show_announcements()
+    finally:
+        # Clean up MCP service
+        if mcp_service:
+            try:
+                mcp_service.shutdown()
+            except Exception as e:
+                if args.verbose:
+                    io.tool_error(f"Error shutting down MCP: {e}")
 
 
 def is_first_run_of_new_version(io, verbose=False):

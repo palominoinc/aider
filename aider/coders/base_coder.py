@@ -338,9 +338,13 @@ class Coder:
         file_watcher=None,
         auto_copy_context=False,
         auto_accept_architect=True,
+        mcp_service=None,
     ):
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
+
+        # Store MCP service
+        self.mcp_service = mcp_service
 
         self.event = self.analytics.event
         self.chat_language = chat_language
@@ -540,6 +544,17 @@ class Coder:
             if self.verbose:
                 self.io.tool_output("JSON Schema:")
                 self.io.tool_output(json.dumps(self.functions, indent=4))
+
+        # Augment with MCP tools if MCP service is available
+        if self.mcp_service:
+            mcp_tool_schemas = self.mcp_service.get_tool_schemas()
+            if mcp_tool_schemas:
+                if not self.functions:
+                    self.functions = []
+                self.functions.extend(mcp_tool_schemas)
+
+                if self.verbose:
+                    self.io.tool_output(f"Added {len(mcp_tool_schemas)} MCP tool(s) to available functions")
 
     def setup_lint_cmds(self, lint_cmds):
         if not lint_cmds:
@@ -2293,7 +2308,80 @@ class Coder:
 
         return res
 
+    def _execute_mcp_tool(self):
+        """Execute an MCP tool call and add result to chat."""
+        import uuid
+
+        tool_name = self.partial_response_function_call.get("name", "")
+        args_str = self.partial_response_function_call.get("arguments", "{}")
+
+        # Parse arguments
+        try:
+            args = json.loads(args_str) if isinstance(args_str, str) else args_str
+        except json.JSONDecodeError as e:
+            self.io.tool_error(f"Invalid MCP tool arguments: {e}")
+            error_result = {"error": f"Invalid arguments: {e}"}
+            self._add_tool_result_to_chat(tool_name, args_str, json.dumps(error_result))
+            return set()
+
+        self.io.tool_output(f"Calling MCP tool: {tool_name}")
+
+        # Execute the tool
+        try:
+            result = self.mcp_service.execute_tool(tool_name, args)
+
+            # Convert result to string if needed
+            if not isinstance(result, str):
+                result_str = json.dumps(result, indent=2)
+            else:
+                result_str = result
+
+            self.io.tool_output("MCP tool executed successfully")
+
+            # Add tool call and result to conversation
+            self._add_tool_result_to_chat(tool_name, args_str, result_str)
+
+        except Exception as e:
+            self.io.tool_error(f"MCP tool execution failed: {e}")
+            error_result = {"error": str(e)}
+            self._add_tool_result_to_chat(tool_name, args_str, json.dumps(error_result))
+
+        return set()  # No files edited
+
+    def _add_tool_result_to_chat(self, tool_name, args_str, result_str):
+        """Add tool call and result to conversation messages."""
+        import uuid
+
+        tool_call_id = f"mcp_{uuid.uuid4().hex[:8]}"
+
+        # Add assistant message with tool call
+        self.cur_messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": args_str if isinstance(args_str, str) else json.dumps(args_str)
+                }
+            }]
+        })
+
+        # Add tool result message
+        self.cur_messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": result_str
+        })
+
     def apply_updates(self):
+        # Check if this is an MCP tool call
+        if self.partial_response_function_call and self.mcp_service:
+            tool_name = self.partial_response_function_call.get("name", "")
+            if tool_name.startswith("mcp_"):
+                return self._execute_mcp_tool()
+
         edited = set()
         try:
             edits = self.get_edits()

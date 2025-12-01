@@ -605,6 +605,27 @@ def get_parser(default_config_files, git_root):
         help="Send analytics to custom PostHog project",
     )
 
+    ##########
+    group = parser.add_argument_group("MCP settings")
+    group.add_argument(
+        "--enable-mcp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable MCP tool integration (default: False)",
+    )
+    group.add_argument(
+        "--mcp-config",
+        metavar="MCP_CONFIG_FILE",
+        help="Specify MCP servers configuration file",
+    ).complete = shtab.FILE
+    group.add_argument(
+        "--mcp-servers",
+        action="append",
+        metavar="SERVER_CONFIG",
+        help="MCP server to connect to: name=command [args...] (can be used multiple times)",
+        default=[],
+    )
+
     #########
     group = parser.add_argument_group("Upgrading")
     group.add_argument(

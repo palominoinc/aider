@@ -368,6 +368,22 @@
 #voice-input-device: xxx
 
 #################
+# MCP settings:
+
+## Enable MCP tool integration (default: False)
+#enable-mcp: false
+
+## Specify MCP servers configuration file
+#mcp-config: .aider.mcp.yml
+
+## MCP server to connect to: name=command [args...] (can be used multiple times)
+#mcp-servers: xxx
+## Example format:
+#mcp-servers:
+#  - "filesystem=npx -y @modelcontextprotocol/server-filesystem /tmp"
+#  - "github=mcp-server-github"
+
+#################
 # Other settings:
 
 ## Never prompt for or attempt to install Playwright for web scraping (default: False).
