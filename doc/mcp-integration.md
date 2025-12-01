@@ -121,6 +121,168 @@ mcp-servers:
   - "github=mcp-server-github"
 ```
 
+### Using Local MCP Servers
+
+You can point aider to local stdin/stdout MCP servers on your computer. The server must communicate via standard input/output and follow the MCP protocol specification.
+
+#### Where npx Installs MCP Servers
+
+When you use `npx -y @modelcontextprotocol/server-name`, npx downloads and caches packages in:
+
+- **npm cache location**: `~/.npm/` (find with `npm config get cache`)
+- **npx cache**: Typically `~/.npm/_npx/` or within the npm cache folder
+- **Global packages**: `/usr/local/lib/node_modules/` or `~/.npm-global/`
+
+The `-y` flag auto-installs without prompting. Each run checks the cache first before downloading.
+
+#### Configuration Options for Local Servers
+
+**Option 1: Direct Python Script**
+
+If you have a Python MCP server script:
+
+```yaml
+# .aider.mcp.yml
+servers:
+  my_local_server:
+    command: "python"
+    args:
+      - "/path/to/your/mcp_server.py"
+    env:
+      MY_CONFIG: "value"
+```
+
+Or via CLI:
+```bash
+aider --enable-mcp --mcp-servers "myserver=python /path/to/your/mcp_server.py"
+```
+
+**Option 2: Python Module**
+
+If it's an installed Python package:
+
+```yaml
+servers:
+  my_server:
+    command: "python"
+    args:
+      - "-m"
+      - "your_package.server"
+```
+
+**Option 3: Executable Binary**
+
+If you have a compiled binary:
+
+```yaml
+servers:
+  my_server:
+    command: "/usr/local/bin/my-mcp-server"
+    args:
+      - "--config"
+      - "/path/to/config.json"
+```
+
+**Option 4: Node.js Local Project**
+
+If you're developing a local Node.js MCP server:
+
+```yaml
+servers:
+  my_node_server:
+    command: "node"
+    args:
+      - "/path/to/your-mcp-server/dist/index.js"
+```
+
+Or if using npm scripts:
+
+```yaml
+servers:
+  my_server:
+    command: "npm"
+    args:
+      - "run"
+      - "start"
+      - "--prefix"
+      - "/path/to/your-mcp-server"
+```
+
+**Option 5: Absolute Path to Executable**
+
+```bash
+aider --enable-mcp --mcp-servers "myserver=/home/user/bin/my-mcp-server --arg1 --arg2"
+```
+
+#### Example: Local Python MCP Server
+
+If you have a custom MCP server at `/home/user/mcp-servers/my_server.py`:
+
+```yaml
+# .aider.mcp.yml
+servers:
+  local_tools:
+    command: "python"
+    args:
+      - "/home/user/mcp-servers/my_server.py"
+    env:
+      DEBUG: "true"
+      API_KEY: "${MY_API_KEY}"
+```
+
+Then run:
+```bash
+export MY_API_KEY="your-key"
+aider --enable-mcp --mcp-config .aider.mcp.yml
+```
+
+#### How stdin/stdout MCP Servers Work
+
+MCP servers communicate via stdio (standard input/output). The aider MCP client:
+
+1. Spawns your command as a subprocess
+2. Connects to its stdin/stdout pipes
+3. Sends JSON-RPC messages over stdin
+4. Receives responses from stdout
+
+**Your server must**:
+- Read JSON-RPC messages from stdin
+- Write JSON-RPC responses to stdout
+- Use stderr for logging (not stdout)
+- Follow the MCP protocol specification
+
+#### Testing a Local Server
+
+Test your local server manually first:
+
+```bash
+# Test basic functionality
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | python /path/to/your/server.py
+```
+
+Or use the official MCP inspector for interactive testing:
+
+```bash
+npx @modelcontextprotocol/inspector python /path/to/your/server.py
+```
+
+This opens a web UI where you can test your server's tools interactively.
+
+#### Finding Installed Packages
+
+To locate where npx cached a specific package:
+
+```bash
+# Show npm cache location
+npm config get cache
+
+# List npx cache contents
+ls -la ~/.npm/_npx/
+
+# Search npm cache
+npm cache ls @modelcontextprotocol/server-filesystem
+```
+
 ## Usage
 
 Once MCP is enabled and servers are configured, the LLM automatically has access to their tools. You don't need to do anything special - just ask the LLM to perform tasks that require those tools.
