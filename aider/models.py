@@ -968,9 +968,22 @@ class Model(ModelSettings):
             kwargs["temperature"] = temperature
 
         if functions is not None:
-            function = functions[0]
-            kwargs["tools"] = [dict(type="function", function=function)]
-            kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+            # Check if this is ask mode by looking at function list contents
+            # Ask mode will have only MCP tools (all start with "mcp_")
+            # Coding modes have native functions (don't start with "mcp_")
+            is_ask_mode = len(functions) > 0 and all(
+                f.get("name", "").startswith("mcp_") for f in functions
+            )
+
+            if is_ask_mode:
+                # Ask mode: Send all MCP tools, let LLM choose freely
+                kwargs["tools"] = [dict(type="function", function=f) for f in functions]
+                kwargs["tool_choice"] = "auto"
+            else:
+                # Coding mode: Force native function (existing behavior)
+                function = functions[0]
+                kwargs["tools"] = [dict(type="function", function=function)]
+                kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
         if self.extra_params:
             kwargs.update(self.extra_params)
         if self.is_ollama() and "num_ctx" not in kwargs:

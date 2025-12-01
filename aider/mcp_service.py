@@ -88,6 +88,39 @@ class MCPService:
             except Exception as e:
                 self.io.tool_error(f"Unexpected error discovering tools from '{server_name}': {e}")
 
+    def _fix_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Fix common schema issues for OpenAI compatibility.
+
+        Args:
+            schema: JSON schema to fix
+
+        Returns:
+            Fixed schema
+        """
+        if not isinstance(schema, dict):
+            return schema
+
+        # Make a copy to avoid modifying original
+        fixed = dict(schema)
+
+        # Fix arrays missing items field
+        if fixed.get("type") == "array" and "items" not in fixed:
+            fixed["items"] = {"type": "string"}  # Default to string array
+
+        # Recursively fix nested schemas
+        if "properties" in fixed:
+            fixed["properties"] = {
+                k: self._fix_schema(v) for k, v in fixed["properties"].items()
+            }
+
+        if "items" in fixed:
+            fixed["items"] = self._fix_schema(fixed["items"])
+
+        if "additionalProperties" in fixed and isinstance(fixed["additionalProperties"], dict):
+            fixed["additionalProperties"] = self._fix_schema(fixed["additionalProperties"])
+
+        return fixed
+
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """Convert MCP tool schemas to OpenAI function call format.
 
@@ -105,7 +138,8 @@ class MCPService:
             # Add parameters from inputSchema
             input_schema = mcp_schema.get("inputSchema", {})
             if input_schema:
-                openai_schema["parameters"] = input_schema
+                # Fix schema issues before adding
+                openai_schema["parameters"] = self._fix_schema(input_schema)
             else:
                 # Default to empty object schema if no input schema
                 openai_schema["parameters"] = {

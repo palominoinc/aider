@@ -546,16 +546,16 @@ class Coder:
                 self.io.tool_output(json.dumps(self.functions, indent=4))
 
         # Augment with MCP tools if MCP service is available
-        # Only add to coders that already use function calling (functions != None)
-        if self.mcp_service and self.functions is not None:
+        # Only add to AskCoder (edit_format == "ask")
+        if self.mcp_service and self.functions is not None and self.edit_format == "ask":
             mcp_tool_schemas = self.mcp_service.get_tool_schemas()
             if mcp_tool_schemas:
                 self.functions.extend(mcp_tool_schemas)
 
                 if self.verbose:
                     self.io.tool_output(f"Added {len(mcp_tool_schemas)} MCP tool(s) to available functions")
-        elif self.mcp_service and self.verbose:
-            self.io.tool_output("MCP tools available but this edit format doesn't use function calling")
+        elif self.mcp_service and self.verbose and self.edit_format == "ask":
+            self.io.tool_output("MCP tools available but no tools discovered")
 
     def setup_lint_cmds(self, lint_cmds):
         if not lint_cmds:
