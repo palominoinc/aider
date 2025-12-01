@@ -573,6 +573,272 @@ The conversion happens in `MCPService.get_tool_schemas()`.
 - Tools must return serializable results (JSON)
 - No streaming support for tool results (tools execute fully then return)
 
+## Best Practices
+
+### Avoiding Tool Overload
+
+**Important**: Adding too many or irrelevant MCP tools can confuse the LLM and distract from aider's primary purpose of writing code. Follow these guidelines to keep the LLM focused.
+
+#### Potential Issues with Too Many Tools
+
+**Context Window Pollution**:
+- Each tool schema consumes tokens in the context window
+- Too many tools = less space for code and conversation
+- Tool descriptions compete with editing instructions
+
+**Decision Paralysis**:
+- LLM may spend time deciding which tool to use
+- Could make unnecessary tool calls instead of writing code
+- Might prioritize tool exploration over code editing
+
+**Focus Drift**:
+- Irrelevant tools (calendar, email, social media) confuse the LLM about its role
+- LLM might try to solve problems with tools when direct code changes are better
+
+### ✅ DO: Enable Development-Focused Tools
+
+Choose tools that directly support software development:
+
+**Reading External Code/Docs**:
+```yaml
+servers:
+  filesystem:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/docs"]
+```
+*Use when*: Need to reference external documentation or related codebases
+
+**API Verification**:
+```yaml
+servers:
+  github:
+    command: "mcp-server-github"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+```
+*Use when*: Need to verify APIs exist, check issues, or understand existing integrations
+
+**Database Schema Inspection**:
+```yaml
+servers:
+  postgres:
+    command: "mcp-server-postgres"
+    args: ["postgresql://localhost/mydb"]
+```
+*Use when*: Writing queries or data access code
+
+**Benefits**:
+- LLM verifies APIs before using them
+- Can check database schemas when writing queries
+- Can read related code for context
+- Reduces hallucination about external systems
+
+### ❌ DON'T: Enable Non-Development Tools
+
+Avoid tools unrelated to code writing:
+- Email servers
+- Calendar management
+- Social media APIs
+- Business logic tools (CRM, billing, etc.)
+- Content management systems (unless you're developing for them)
+
+These dilute focus and add unnecessary noise to the LLM's decision space.
+
+### Start Minimal, Add as Needed
+
+**Default approach - No MCP**:
+```bash
+# For most sessions, don't enable MCP
+aider
+```
+
+**Enable only when needed**:
+```bash
+# Working with a database? Enable DB tools
+aider --enable-mcp --mcp-config db-tools.yml
+
+# Need to check external APIs? Enable API tools
+aider --enable-mcp --mcp-config api-tools.yml
+```
+
+**Rule of thumb**: Keep total tools under 5-10
+- More tools = more context overhead
+- Focus > breadth
+
+### Use Project-Specific Configurations
+
+Create targeted configs for different project types:
+
+**Web API Project** (`.aider.mcp.yml`):
+```yaml
+servers:
+  github:
+    command: "mcp-server-github"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+  api_docs:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "./api-docs"]
+```
+
+**Data Pipeline Project** (`.aider.mcp.yml`):
+```yaml
+servers:
+  postgres:
+    command: "mcp-server-postgres"
+    args: ["postgresql://localhost/warehouse"]
+
+  filesystem:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+```
+
+**Library Development** (don't enable MCP):
+```bash
+# Pure code work - no external systems needed
+aider
+```
+
+### Monitor and Adjust
+
+Use verbose mode to observe tool usage:
+
+```bash
+aider --enable-mcp --mcp-config .aider.mcp.yml --verbose
+```
+
+**Good signs**:
+- Tools called occasionally when gathering context
+- Tool results help LLM make better code decisions
+- Normal editing workflow continues smoothly
+
+**Warning signs**:
+- Frequent unnecessary tool calls
+- LLM tries to use tools for everything
+- Slower responses due to tool execution
+- Tool errors disrupting flow
+
+**Action**: If you see warning signs, remove or reduce tools.
+
+### When MCP Helps vs. Hurts
+
+**MCP is VALUABLE when**:
+- Working with external systems (databases, APIs, filesystems)
+- Need to verify information exists before using it
+- Reading supplementary code or documentation
+- Understanding deployed systems or schemas
+
+**Example - Good use**:
+```
+You: "Write a function to query the users table"
+
+LLM: [Calls mcp_postgres_describe_table]
+     [Sees: id, email, created_at, is_active columns]
+
+LLM: Based on your schema, here's the function:
+     def get_active_users():
+         return db.query(
+             "SELECT id, email FROM users WHERE is_active = true"
+         )
+```
+
+**MCP is NOT NEEDED when**:
+- Writing standalone algorithms
+- Refactoring existing code already in context
+- Simple bug fixes with clear changes
+- Working on isolated components
+- All relevant code is already in the chat
+
+**Example - Unnecessary use**:
+```
+You: "Fix this off-by-one error in the loop"
+
+LLM: [Calls mcp_filesystem_search for related code]
+     [Wastes time - the issue is obvious]
+
+Better: Just fix the loop immediately
+```
+
+### A/B Testing Your Configuration
+
+Test whether tools help or hurt your workflow:
+
+**Baseline (no MCP)**:
+```bash
+aider
+> Write a function to process user data
+```
+*Observe: response time, code quality, accuracy*
+
+**With MCP**:
+```bash
+aider --enable-mcp --mcp-config .aider.mcp.yml
+> Write a function to process user data
+```
+*Observe: does schema checking improve accuracy? Or just slow things down?*
+
+**Decision**: Keep MCP enabled only if it measurably improves outcomes.
+
+### Recommended Configurations by Use Case
+
+**Minimal** (most sessions):
+```yaml
+# No servers - pure code editing
+servers: {}
+```
+
+**Light** (occasional external verification):
+```yaml
+servers:
+  filesystem:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "${PWD}"]
+```
+
+**Moderate** (full-stack development):
+```yaml
+servers:
+  filesystem:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "${PWD}"]
+  postgres:
+    command: "mcp-server-postgres"
+    args: ["postgresql://localhost/mydb"]
+```
+
+**Heavy** (complex integrations):
+```yaml
+servers:
+  filesystem:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "${PWD}"]
+  postgres:
+    command: "mcp-server-postgres"
+    args: ["postgresql://localhost/mydb"]
+  github:
+    command: "mcp-server-github"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+  redis:
+    command: "mcp-server-redis"
+    args: ["redis://localhost:6379"]
+```
+
+*Note*: "Heavy" config may overwhelm the LLM - use sparingly.
+
+### Summary: The Golden Rules
+
+1. **MCP is opt-in** - Don't enable unless you need it
+2. **Be selective** - Only development-focused tools
+3. **Keep it minimal** - Fewer tools = better focus
+4. **Project-specific** - Different configs for different work
+5. **Monitor usage** - Use `--verbose` to watch behavior
+6. **Remove what's not helping** - If a tool isn't used, disable it
+7. **Test impact** - Compare with/without to verify value
+
+Remember: Aider's strength is writing code. MCP tools should enhance that, not distract from it.
+
 ## Troubleshooting
 
 ### MCP servers not connecting
