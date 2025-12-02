@@ -2407,8 +2407,14 @@ class Coder:
         # Check if this is an MCP tool call
         if self.partial_response_function_call and self.mcp_service:
             tool_name = self.partial_response_function_call.get("name", "")
+            if self.verbose:
+                self.io.tool_output(f"apply_updates: partial_response_function_call name='{tool_name}'")
             if tool_name.startswith("mcp_"):
+                if self.verbose:
+                    self.io.tool_output(f"Detected MCP tool call: {tool_name}")
                 return self._execute_mcp_tool()
+        elif self.verbose and self.mcp_service:
+            self.io.tool_output("apply_updates: No function call detected")
 
         edited = set()
         try:
