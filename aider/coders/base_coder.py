@@ -549,6 +549,10 @@ class Coder:
         # Only add to AskCoder (edit_format == "ask")
         if self.mcp_service and self.functions is not None and self.edit_format == "ask":
             mcp_tool_schemas = self.mcp_service.get_tool_schemas()
+            if self.verbose:
+                self.io.tool_output(f"MCP service has {len(mcp_tool_schemas)} tool schemas")
+                self.io.tool_output(f"Current functions list has {len(self.functions)} items")
+
             if mcp_tool_schemas:
                 # Deduplicate: only add tools that aren't already in functions
                 existing_names = {f.get("name") for f in self.functions}
@@ -557,7 +561,7 @@ class Coder:
                 if new_tools:
                     self.functions.extend(new_tools)
                     if self.verbose:
-                        self.io.tool_output(f"Added {len(new_tools)} MCP tool(s) to available functions")
+                        self.io.tool_output(f"Added {len(new_tools)} MCP tool(s), total now: {len(self.functions)}")
                 elif self.verbose:
                     self.io.tool_output(f"MCP tools already present, skipping ({len(existing_names)} existing)")
         elif self.mcp_service and self.verbose and self.edit_format == "ask":
