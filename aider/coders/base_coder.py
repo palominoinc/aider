@@ -1600,7 +1600,17 @@ class Coder:
 
         edited = self.apply_updates()
 
-        if edited:
+        # Check if MCP tool was executed - if so, call LLM again with tool result
+        if edited == "MCP_TOOL_EXECUTED":
+            # Don't add a new user message, just call send() again with updated messages
+            chunks = self.format_messages()
+            messages = chunks.all_messages()
+            if self.check_tokens(messages):
+                yield from self.send(messages, functions=self.functions)
+                # Now apply_updates again for the LLM's response to the tool result
+                edited = self.apply_updates()
+
+        if edited and edited != "MCP_TOOL_EXECUTED":
             self.aider_edited_files.update(edited)
             saved_message = self.auto_commit(edited)
 
@@ -1612,7 +1622,7 @@ class Coder:
         if self.reflected_message:
             return
 
-        if edited and self.auto_lint:
+        if edited and edited != "MCP_TOOL_EXECUTED" and self.auto_lint:
             lint_errors = self.lint_edited(edited)
             self.auto_commit(edited, context="Ran the linter")
             self.lint_outcome = not lint_errors
@@ -1629,7 +1639,7 @@ class Coder:
                 dict(role="assistant", content="Ok"),
             ]
 
-        if edited and self.auto_test:
+        if edited and edited != "MCP_TOOL_EXECUTED" and self.auto_test:
             test_errors = self.commands.cmd_test(self.test_cmd)
             self.test_outcome = not test_errors
             if test_errors:
@@ -2323,7 +2333,8 @@ class Coder:
             self.io.tool_error(f"Invalid MCP tool arguments: {e}")
             error_result = {"error": f"Invalid arguments: {e}"}
             self._add_tool_result_to_chat(tool_name, args_str, json.dumps(error_result))
-            return set()
+            # Return special marker even for errors
+            return "MCP_TOOL_EXECUTED"
 
         self.io.tool_output(f"Calling MCP tool: {tool_name}")
 
@@ -2347,7 +2358,9 @@ class Coder:
             error_result = {"error": str(e)}
             self._add_tool_result_to_chat(tool_name, args_str, json.dumps(error_result))
 
-        return set()  # No files edited
+        # Return special marker to indicate MCP tool was executed
+        # This signals send_message to continue the loop
+        return "MCP_TOOL_EXECUTED"
 
     def _add_tool_result_to_chat(self, tool_name, args_str, result_str):
         """Add tool call and result to conversation messages."""
