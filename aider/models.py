@@ -978,12 +978,16 @@ class Model(ModelSettings):
             if is_ask_mode:
                 # Ask mode: Send all MCP tools, let LLM choose freely
                 kwargs["tools"] = [dict(type="function", function=f) for f in functions]
-                kwargs["tool_choice"] = "auto"
+                # Only set tool_choice if model supports it
+                if self.info.get("supports_tool_choice", True):
+                    kwargs["tool_choice"] = "auto"
             else:
                 # Coding mode: Force native function (existing behavior)
                 function = functions[0]
                 kwargs["tools"] = [dict(type="function", function=function)]
-                kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+                # Only set tool_choice if model supports it
+                if self.info.get("supports_tool_choice", True):
+                    kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
         if self.extra_params:
             kwargs.update(self.extra_params)
         if self.is_ollama() and "num_ctx" not in kwargs:
