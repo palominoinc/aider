@@ -6,5 +6,9 @@ class AskCoder(Coder):
     """Ask questions about code without making any changes."""
 
     edit_format = "ask"
-    functions = []  # Enable MCP tool addition when --enable-mcp is set
     gpt_prompts = AskPrompts()
+
+    def __init__(self, *args, **kwargs):
+        # Initialize instance variable for functions (not class variable)
+        self.functions = []
+        super().__init__(*args, **kwargs)
