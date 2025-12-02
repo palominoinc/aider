@@ -1482,6 +1482,8 @@ class Coder:
         try:
             while True:
                 try:
+                    if self.verbose and self.functions:
+                        self.io.tool_output(f"Calling send() with {len(self.functions)} functions")
                     yield from self.send(messages, functions=self.functions)
                     break
                 except litellm_ex.exceptions_tuple() as err:
@@ -1612,6 +1614,8 @@ class Coder:
 
         # Check if MCP tool was executed - if so, call LLM again with tool result
         if edited == "MCP_TOOL_EXECUTED":
+            if self.verbose:
+                self.io.tool_output(f"About to call LLM again after tool execution, functions list has {len(self.functions)} items")
             # Don't add a new user message, just call send() again with updated messages
             chunks = self.format_messages()
             messages = chunks.all_messages()
