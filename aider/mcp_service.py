@@ -128,8 +128,8 @@ class MCPService:
         """
         schemas = []
 
-        # TEMPORARY DEBUG: Only return first 5 tools to test
-        tool_items = list(self.tools.items())[:5]
+        # TEMPORARY DEBUG: Only return first 20 tools to test
+        tool_items = list(self.tools.items())[:20]
 
         for namespaced_tool_name, (server_name, mcp_schema) in tool_items:
             # Convert to OpenAI function schema format
