@@ -967,7 +967,7 @@ class Model(ModelSettings):
 
             kwargs["temperature"] = temperature
 
-        if functions is not None:
+        if functions is not None and self.info.get("supports_function_calling", True):
             # Check if this is ask mode by looking at function list contents
             # Ask mode will have only MCP tools (all start with "mcp_")
             # Coding modes have native functions (don't start with "mcp_")
