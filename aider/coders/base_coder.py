@@ -2455,10 +2455,8 @@ class Coder:
             # Return special marker even for errors
             return "MCP_TOOL_EXECUTED"
 
-        self.io.tool_output(f"Calling MCP tool: {tool_name}")
-
-        # Display the arguments being passed
         if self.verbose:
+            self.io.tool_output(f"Calling MCP tool: {tool_name}")
             self.io.tool_output(f"Tool arguments: {json.dumps(args, indent=2)}")
 
         # Execute the tool
