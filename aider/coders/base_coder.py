@@ -1616,8 +1616,8 @@ class Coder:
 
         # Check if MCP tool was executed - if so, call LLM again with tool result
         if edited == "MCP_TOOL_EXECUTED":
-            self.io.tool_output("Sending tool result back to LLM...")
             if self.verbose:
+                self.io.tool_output("Sending tool result back to LLM...")
                 self.io.tool_output(f"About to call LLM again after tool execution, functions list has {len(self.functions)} items")
                 self.io.tool_output(f"Current messages count: {len(self.cur_messages)}")
                 # Show last 2 messages (tool call and result)
@@ -1628,21 +1628,25 @@ class Coder:
             chunks = self.format_messages()
             messages = chunks.all_messages()
             if self.check_tokens(messages):
-                self.io.tool_output(f"Calling LLM with {len(messages)} messages including tool result...")
+                if self.verbose:
+                    self.io.tool_output(f"Calling LLM with {len(messages)} messages including tool result...")
                 yield from self.send(messages, functions=self.functions)
-                # Now apply_updates again for the LLM's response to the tool result
-                self.io.tool_output("Processing LLM's response to tool result...")
+                # Now apply_updates again for the LLM's response to tool result
+                if self.verbose:
+                    self.io.tool_output("Processing LLM's response to tool result...")
 
                 # Display the LLM's response content after tool execution
                 if self.partial_response_content:
-                    self.io.tool_output(f"\nLLM's response after tool execution:")
+                    if self.verbose:
+                        self.io.tool_output(f"\nLLM's response after tool execution:")
                     self.io.assistant_output(self.partial_response_content)
 
                 edited = self.apply_updates()
-                if edited and edited != "MCP_TOOL_EXECUTED":
-                    self.io.tool_output("LLM provided final response")
-                elif not edited:
-                    self.io.tool_output("LLM response processing completed")
+                if self.verbose:
+                    if edited and edited != "MCP_TOOL_EXECUTED":
+                        self.io.tool_output("LLM provided final response")
+                    elif not edited:
+                        self.io.tool_output("LLM response processing completed")
             else:
                 self.io.tool_warning("Token limit exceeded, cannot send tool result back to LLM")
 
@@ -2467,11 +2471,12 @@ class Coder:
             else:
                 result_str = result
 
-            self.io.tool_output("MCP tool executed successfully")
+            if self.verbose:
+                self.io.tool_output("MCP tool executed successfully")
 
-            # Display the tool result to the user
-            if result_str:
-                self.io.tool_output(f"Tool result:\n{result_str}")
+                # Display the tool result to the user
+                if result_str:
+                    self.io.tool_output(f"Tool result:\n{result_str}")
 
             # Add tool call and result to conversation
             self._add_tool_result_to_chat(tool_name, args_str, result_str)
