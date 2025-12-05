@@ -47,7 +47,8 @@ class MCPService:
                     server_name=server_name,
                     command=server_config.command,
                     args=server_config.args,
-                    env=server_config.get_env()
+                    env=server_config.get_env(),
+                    verbose=self.verbose
                 )
 
                 client.connect(timeout=10.0)

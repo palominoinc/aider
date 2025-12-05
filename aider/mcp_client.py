@@ -33,11 +33,12 @@ class MCPClient:
     """
 
     def __init__(self, server_name: str, command: str, args: Optional[List[str]] = None,
-                 env: Optional[Dict[str, str]] = None):
+                 env: Optional[Dict[str, str]] = None, verbose: bool = False):
         self.server_name = server_name
         self.command = command
         self.args = args or []
         self.env = env or {}
+        self.verbose = verbose
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
@@ -85,7 +86,7 @@ class MCPClient:
     async def _async_connect(self):
         """Async method to connect to the MCP server."""
         # Debug output for credentials
-        if self.env:
+        if self.verbose and self.env:
             print(f"\n[DEBUG mcp_client.py] Starting MCP server '{self.server_name}' with env vars:")
             for key, value in self.env.items():
                 # Mask password values

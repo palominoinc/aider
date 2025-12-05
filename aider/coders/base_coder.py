@@ -2100,7 +2100,7 @@ class Coder:
                 # Debug: why isn't text being displayed?
                 print(f"  [DEBUG] Not displaying - show_pretty={self.show_pretty()}, text_empty={not text}")
 
-        if self.verbose or chunk_count > 0:  # Show summary even without verbose if we got chunks
+        if self.verbose:
             print(f"\n[DEBUG base_coder.py:2030] Finished processing stream")
             print(f"  Total chunks: {chunk_count}")
             print(f"  Received content: {received_content}")
@@ -2454,7 +2454,7 @@ class Coder:
         self.io.tool_output(f"Calling MCP tool: {tool_name}")
 
         # Display the arguments being passed
-        if self.verbose or True:  # Always show for now during debugging
+        if self.verbose:
             self.io.tool_output(f"Tool arguments: {json.dumps(args, indent=2)}")
 
         # Execute the tool
