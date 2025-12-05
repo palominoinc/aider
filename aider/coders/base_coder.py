@@ -1619,13 +1619,30 @@ class Coder:
             self.io.tool_output("Sending tool result back to LLM...")
             if self.verbose:
                 self.io.tool_output(f"About to call LLM again after tool execution, functions list has {len(self.functions)} items")
+                self.io.tool_output(f"Current messages count: {len(self.cur_messages)}")
+                # Show last 2 messages (tool call and result)
+                if len(self.cur_messages) >= 2:
+                    self.io.tool_output(f"Last message roles: {[m.get('role') for m in self.cur_messages[-2:]]}")
+
             # Don't add a new user message, just call send() again with updated messages
             chunks = self.format_messages()
             messages = chunks.all_messages()
             if self.check_tokens(messages):
+                self.io.tool_output(f"Calling LLM with {len(messages)} messages including tool result...")
                 yield from self.send(messages, functions=self.functions)
                 # Now apply_updates again for the LLM's response to the tool result
+                self.io.tool_output("Processing LLM's response to tool result...")
+
+                # Display the LLM's response content after tool execution
+                if self.partial_response_content:
+                    self.io.tool_output(f"\nLLM's response after tool execution:")
+                    self.io.assistant_output(self.partial_response_content)
+
                 edited = self.apply_updates()
+                if edited and edited != "MCP_TOOL_EXECUTED":
+                    self.io.tool_output("LLM provided final response")
+                elif not edited:
+                    self.io.tool_output("LLM response processing completed")
             else:
                 self.io.tool_warning("Token limit exceeded, cannot send tool result back to LLM")
 
@@ -2079,13 +2096,18 @@ class Coder:
                     sys.stdout.write(safe_text)
                 sys.stdout.flush()
                 yield text
+            elif chunk_count <= 5 and self.verbose:
+                # Debug: why isn't text being displayed?
+                print(f"  [DEBUG] Not displaying - show_pretty={self.show_pretty()}, text_empty={not text}")
 
-        if self.verbose:
+        if self.verbose or chunk_count > 0:  # Show summary even without verbose if we got chunks
             print(f"\n[DEBUG base_coder.py:2030] Finished processing stream")
             print(f"  Total chunks: {chunk_count}")
             print(f"  Received content: {received_content}")
             print(f"  Partial response content length: {len(self.partial_response_content)}")
             print(f"  Partial response function call: {self.partial_response_function_call}")
+            if self.partial_response_content:
+                print(f"  Response preview: {self.partial_response_content[:200]}...")
 
         if not received_content:
             if self.verbose:
@@ -2430,6 +2452,10 @@ class Coder:
             return "MCP_TOOL_EXECUTED"
 
         self.io.tool_output(f"Calling MCP tool: {tool_name}")
+
+        # Display the arguments being passed
+        if self.verbose or True:  # Always show for now during debugging
+            self.io.tool_output(f"Tool arguments: {json.dumps(args, indent=2)}")
 
         # Execute the tool
         try:

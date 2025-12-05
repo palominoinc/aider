@@ -84,6 +84,17 @@ class MCPClient:
 
     async def _async_connect(self):
         """Async method to connect to the MCP server."""
+        # Debug output for credentials
+        if self.env:
+            print(f"\n[DEBUG mcp_client.py] Starting MCP server '{self.server_name}' with env vars:")
+            for key, value in self.env.items():
+                # Mask password values
+                if 'password' in key.lower() or 'pass' in key.lower():
+                    display_value = '*' * len(value) if value else '<empty>'
+                else:
+                    display_value = value if value else '<empty>'
+                print(f"  {key}: {display_value}")
+
         server_params = StdioServerParameters(
             command=self.command,
             args=self.args,

@@ -1050,7 +1050,7 @@ class InputOutput:
             show_resp = Text(str(message) or "(empty response)")
 
         # Force a visible re-render and flush, in case the console was buffering output
-        self.console.print(show_resp, flush=True)
+        self.console.print(show_resp)
         self.console.file.flush()
 
     def set_placeholder(self, placeholder):
