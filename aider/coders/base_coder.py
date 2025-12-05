@@ -698,7 +698,9 @@ class Coder:
     def get_cur_message_text(self):
         text = ""
         for msg in self.cur_messages:
-            text += msg["content"] + "\n"
+            content = msg.get("content")
+            if content:
+                text += content + "\n"
         return text
 
     def get_ident_mentions(self, text):
@@ -1614,6 +1616,7 @@ class Coder:
 
         # Check if MCP tool was executed - if so, call LLM again with tool result
         if edited == "MCP_TOOL_EXECUTED":
+            self.io.tool_output("Sending tool result back to LLM...")
             if self.verbose:
                 self.io.tool_output(f"About to call LLM again after tool execution, functions list has {len(self.functions)} items")
             # Don't add a new user message, just call send() again with updated messages
@@ -1623,6 +1626,8 @@ class Coder:
                 yield from self.send(messages, functions=self.functions)
                 # Now apply_updates again for the LLM's response to the tool result
                 edited = self.apply_updates()
+            else:
+                self.io.tool_warning("Token limit exceeded, cannot send tool result back to LLM")
 
         if edited and edited != "MCP_TOOL_EXECUTED":
             self.aider_edited_files.update(edited)
@@ -1999,6 +2004,33 @@ class Coder:
             except AttributeError:
                 pass
 
+            # Handle tool_calls (newer OpenAI format)
+            try:
+                tool_calls = chunk.choices[0].delta.tool_calls
+                if tool_calls:
+                    for tool_call in tool_calls:
+                        if self.verbose and chunk_count <= 5:
+                            print(f"  [DEBUG] Processing tool_call: {tool_call}")
+
+                        # Extract function name and arguments
+                        if hasattr(tool_call, 'function'):
+                            func = tool_call.function
+                            if hasattr(func, 'name') and func.name:
+                                if 'name' not in self.partial_response_function_call:
+                                    self.partial_response_function_call['name'] = func.name
+                                else:
+                                    self.partial_response_function_call['name'] += func.name
+
+                            if hasattr(func, 'arguments') and func.arguments:
+                                if 'arguments' not in self.partial_response_function_call:
+                                    self.partial_response_function_call['arguments'] = func.arguments
+                                else:
+                                    self.partial_response_function_call['arguments'] += func.arguments
+
+                            received_content = True
+            except AttributeError:
+                pass
+
             text = ""
 
             try:
@@ -2064,7 +2096,8 @@ class Coder:
         show_resp = self.render_incremental_response(final)
         # Apply any reasoning tag formatting
         show_resp = replace_reasoning_tags(show_resp, self.reasoning_tag_name)
-        self.mdstream.update(show_resp, final=final)
+        if self.mdstream:
+            self.mdstream.update(show_resp, final=final)
 
     def render_incremental_response(self, final):
         return self.get_multi_response_content_in_progress()
@@ -2410,6 +2443,10 @@ class Coder:
 
             self.io.tool_output("MCP tool executed successfully")
 
+            # Display the tool result to the user
+            if result_str:
+                self.io.tool_output(f"Tool result:\n{result_str}")
+
             # Add tool call and result to conversation
             self._add_tool_result_to_chat(tool_name, args_str, result_str)
 
@@ -2536,7 +2573,9 @@ class Coder:
         context = ""
         if history:
             for msg in history:
-                context += "\n" + msg["role"].upper() + ": " + msg["content"] + "\n"
+                content = msg.get("content")
+                if content:
+                    context += "\n" + msg["role"].upper() + ": " + content + "\n"
 
         return context
 
