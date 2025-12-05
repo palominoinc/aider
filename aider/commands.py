@@ -1661,6 +1661,34 @@ Just show me the edits I need to make.
         except Exception as e:
             self.io.tool_error(f"An unexpected error occurred while copying to clipboard: {str(e)}")
 
+    def cmd_mcp(self, args):
+        "Toggle MCP tools on/off, or show status with /mcp"
+        if not self.coder.mcp_service:
+            self.io.tool_error("MCP service is not available. Start aider with --enable-mcp to use MCP tools.")
+            return
+
+        args = args.strip().lower()
+
+        if args in ("on", "enable", "yes", "true"):
+            self.coder.mcp_enabled = True
+            self.coder.setup_mcp_tools()
+            tool_count = len([f for f in self.coder.functions if f.get("name", "").startswith("mcp_")])
+            self.io.tool_output(f"MCP tools enabled ({tool_count} tools available)")
+        elif args in ("off", "disable", "no", "false"):
+            self.coder.mcp_enabled = False
+            # Remove MCP tools from functions list
+            if self.coder.functions:
+                self.coder.functions = [f for f in self.coder.functions if not f.get("name", "").startswith("mcp_")]
+            self.io.tool_output("MCP tools disabled")
+        else:
+            # Show status
+            status = "enabled" if getattr(self.coder, "mcp_enabled", True) else "disabled"
+            tool_count = len([f for f in (self.coder.functions or []) if f.get("name", "").startswith("mcp_")])
+            self.io.tool_output(f"MCP tools: {status}")
+            if status == "enabled":
+                self.io.tool_output(f"  {tool_count} MCP tools available")
+            self.io.tool_output("  Use /mcp on or /mcp off to toggle")
+
 
 def expand_subdir(file_path):
     if file_path.is_file():

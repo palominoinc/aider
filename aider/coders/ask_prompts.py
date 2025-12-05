@@ -12,18 +12,6 @@ If you need to describe code changes, do so *briefly*.
 
 If you have access to tools/functions that can help answer the user's question, use them.
 Call the appropriate tools to gather information before answering.
-
-## WebPal Document Management System
-
-You have authenticated access to WebPal, a document management system and CMS.
-Use the webpal tools (mcp_webpal_*) when users ask about documents, files, folders, or content management.
-
-WebPal terminology:
-- "documents" and "files" are synonymous
-- "folders" and "directories" are synonymous
-- Paths use "/" separator (e.g., "/folder/subfolder")
-
-When users mention webpal, documents, or content management, use the available webpal tools to query the system rather than searching the code repository.
 """
 
     example_messages = []

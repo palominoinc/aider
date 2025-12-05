@@ -345,6 +345,7 @@ class Coder:
 
         # Store MCP service
         self.mcp_service = mcp_service
+        self.mcp_enabled = True if mcp_service else False
 
         self.event = self.analytics.event
         self.chat_language = chat_language
@@ -545,9 +546,9 @@ class Coder:
                 self.io.tool_output("JSON Schema:")
                 self.io.tool_output(json.dumps(self.functions, indent=4))
 
-        # Augment with MCP tools if MCP service is available
+        # Augment with MCP tools if MCP service is available and enabled
         # Only add to AskCoder (edit_format == "ask")
-        if self.mcp_service and self.functions is not None and self.edit_format == "ask":
+        if self.mcp_service and self.mcp_enabled and self.functions is not None and self.edit_format == "ask":
             mcp_tool_schemas = self.mcp_service.get_tool_schemas()
             if self.verbose:
                 self.io.tool_output(f"MCP service has {len(mcp_tool_schemas)} tool schemas")
@@ -1256,6 +1257,24 @@ class Coder:
         main_sys = self.fmt_system_prompt(self.gpt_prompts.main_system)
         if self.main_model.system_prompt_prefix:
             main_sys = self.main_model.system_prompt_prefix + "\n" + main_sys
+
+        # Add WebPal context if MCP is enabled and we're in ask mode
+        if self.mcp_service and self.mcp_enabled and self.edit_format == "ask":
+            webpal_context = """
+
+## WebPal Document Management System
+
+You have authenticated access to WebPal, a document management system and CMS.
+Use the webpal tools (mcp_webpal_*) when users ask about documents, files, folders, or content management.
+
+WebPal terminology:
+- "documents" and "files" are synonymous
+- "folders" and "directories" are synonymous
+- Paths use "/" separator (e.g., "/folder/subfolder")
+
+When users mention webpal, documents, or content management, use the available webpal tools to query the system rather than searching the code repository.
+"""
+            main_sys += webpal_context
 
         example_messages = []
         if self.main_model.examples_as_sys_msg:
