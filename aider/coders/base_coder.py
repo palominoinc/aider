@@ -1633,10 +1633,18 @@ When users mention webpal, documents, or content management, use the available w
 
         edited = self.apply_updates()
 
-        # Check if MCP tool was executed - if so, call LLM again with tool result
-        if edited == "MCP_TOOL_EXECUTED":
+        if self.verbose:
+            self.io.tool_output(f"[DEBUG] apply_updates returned: {repr(edited)}")
+
+        # Loop to handle multiple tool calls in sequence
+        max_tool_iterations = 10  # Prevent infinite loops
+        tool_iteration = 0
+
+        while edited == "MCP_TOOL_EXECUTED" and tool_iteration < max_tool_iterations:
+            tool_iteration += 1
+
             if self.verbose:
-                self.io.tool_output("Sending tool result back to LLM...")
+                self.io.tool_output(f"Sending tool result back to LLM... (iteration {tool_iteration})")
                 self.io.tool_output(f"About to call LLM again after tool execution, functions list has {len(self.functions)} items")
                 self.io.tool_output(f"Current messages count: {len(self.cur_messages)}")
                 # Show last 2 messages (tool call and result)
@@ -1646,28 +1654,36 @@ When users mention webpal, documents, or content management, use the available w
             # Don't add a new user message, just call send() again with updated messages
             chunks = self.format_messages()
             messages = chunks.all_messages()
-            if self.check_tokens(messages):
-                if self.verbose:
-                    self.io.tool_output(f"Calling LLM with {len(messages)} messages including tool result...")
-                yield from self.send(messages, functions=self.functions)
-                # Now apply_updates again for the LLM's response to tool result
-                if self.verbose:
-                    self.io.tool_output("Processing LLM's response to tool result...")
-
-                # Display the LLM's response content after tool execution
-                if self.partial_response_content:
-                    if self.verbose:
-                        self.io.tool_output(f"\nLLM's response after tool execution:")
-                    self.io.assistant_output(self.partial_response_content)
-
-                edited = self.apply_updates()
-                if self.verbose:
-                    if edited and edited != "MCP_TOOL_EXECUTED":
-                        self.io.tool_output("LLM provided final response")
-                    elif not edited:
-                        self.io.tool_output("LLM response processing completed")
-            else:
+            if not self.check_tokens(messages):
                 self.io.tool_warning("Token limit exceeded, cannot send tool result back to LLM")
+                break
+
+            if self.verbose:
+                self.io.tool_output(f"Calling LLM with {len(messages)} messages including tool result...")
+
+            yield from self.send(messages, functions=self.functions)
+
+            # Now apply_updates again for the LLM's response to tool result
+            if self.verbose:
+                self.io.tool_output("Processing LLM's response to tool result...")
+
+            # Display the LLM's response content after tool execution
+            if self.partial_response_content:
+                if self.verbose:
+                    self.io.tool_output(f"\nLLM's response after tool execution:")
+                self.io.assistant_output(self.partial_response_content)
+
+            edited = self.apply_updates()
+
+            if self.verbose:
+                self.io.tool_output(f"[DEBUG] apply_updates returned: {repr(edited)}")
+                if edited and edited != "MCP_TOOL_EXECUTED":
+                    self.io.tool_output("LLM provided final response")
+                elif not edited:
+                    self.io.tool_output("LLM response processing completed")
+
+        if tool_iteration >= max_tool_iterations:
+            self.io.tool_warning(f"Maximum tool iterations ({max_tool_iterations}) reached, stopping.")
 
         if edited and edited != "MCP_TOOL_EXECUTED":
             self.aider_edited_files.update(edited)
