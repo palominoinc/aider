@@ -1939,8 +1939,45 @@ class Coder:
 
     def show_send_output_stream(self, completion):
         received_content = False
+        chunk_count = 0
+
+        if self.verbose:
+            print(f"\n[DEBUG base_coder.py:1940] Starting to process streaming completion")
+            print(f"[DEBUG] Completion type: {type(completion)}")
 
         for chunk in completion:
+            chunk_count += 1
+            if self.verbose and chunk_count <= 5:
+                print(f"\n[DEBUG] Chunk #{chunk_count}:")
+                print(f"  Type: {type(chunk)}")
+                print(f"  Has choices: {hasattr(chunk, 'choices')}")
+                if hasattr(chunk, 'choices'):
+                    print(f"  Num choices: {len(chunk.choices)}")
+                    if len(chunk.choices) > 0:
+                        choice = chunk.choices[0]
+                        print(f"  Choice 0 has delta: {hasattr(choice, 'delta')}")
+
+                        # Show finish_reason if present
+                        if hasattr(choice, 'finish_reason'):
+                            print(f"  Finish reason: {choice.finish_reason}")
+
+                        if hasattr(choice, 'delta'):
+                            delta = choice.delta
+                            print(f"  Delta attributes: {dir(delta)}")
+
+                            # Check and show actual VALUES
+                            if hasattr(delta, 'content'):
+                                content_val = getattr(delta, 'content', None)
+                                print(f"  Delta.content VALUE: {repr(content_val)}")
+
+                            if hasattr(delta, 'tool_calls'):
+                                tool_calls_val = getattr(delta, 'tool_calls', None)
+                                print(f"  Delta.tool_calls VALUE: {repr(tool_calls_val)}")
+
+                            if hasattr(delta, 'function_call'):
+                                func_call_val = getattr(delta, 'function_call', None)
+                                print(f"  Delta.function_call VALUE: {repr(func_call_val)}")
+
             if len(chunk.choices) == 0:
                 continue
 
@@ -2011,7 +2048,16 @@ class Coder:
                 sys.stdout.flush()
                 yield text
 
+        if self.verbose:
+            print(f"\n[DEBUG base_coder.py:2030] Finished processing stream")
+            print(f"  Total chunks: {chunk_count}")
+            print(f"  Received content: {received_content}")
+            print(f"  Partial response content length: {len(self.partial_response_content)}")
+            print(f"  Partial response function call: {self.partial_response_function_call}")
+
         if not received_content:
+            if self.verbose:
+                print(f"[DEBUG] No content received - showing warning")
             self.io.tool_warning("Empty response received from LLM. Check your provider account?")
 
     def live_incremental_response(self, final):
