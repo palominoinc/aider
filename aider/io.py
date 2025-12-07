@@ -228,6 +228,7 @@ class AutoCompleter(Completer):
 
 
 class InputOutput:
+    EXPECT_USER_INPUT = "==Expect user input==="
     num_error_outputs = 0
     num_user_asks = 0
     clipboard_watcher = None
@@ -359,7 +360,10 @@ class InputOutput:
                 session_kwargs["history"] = FileHistory(self.input_history_file)
             try:
                 self.prompt_session = PromptSession(**session_kwargs)
-                self.console = Console()  # pretty console
+                if self.pretty_assistant:
+                    self.console = Console(force_terminal=False, no_color=True)
+                else:
+                    self.console = Console()  # pretty console
             except Exception as err:
                 self.console = Console(force_terminal=False, no_color=True)
                 self.tool_error(f"Can't initialize prompt toolkit: {err}")  # non-pretty
@@ -398,6 +402,8 @@ class InputOutput:
                         "[bold red]Warning:[/bold red] Invalid configuration for"
                         f" {attr_name}: '{color_value}'. {e}. Disabling this color."
                     )
+                    if self.pretty_assistant:
+                        print(self.EXPECT_USER_INPUT)
                     setattr(self, attr_name, None)  # Reset invalid color to None
 
     def _get_style(self):
@@ -637,7 +643,7 @@ class InputOutput:
                 event.current_buffer.insert_text("\n")
 
         if self.pretty_assistant:
-            print("==Expect user input===")
+            print(self.EXPECT_USER_INPUT)
         while True:
             if multiline_input:
                 show = self.prompt_prefix
@@ -776,6 +782,8 @@ class InputOutput:
             style = dict()
 
         self.console.print(Text(inp), **style)
+        if self.pretty_assistant:
+            print(self.EXPECT_USER_INPUT)
 
     def user_input(self, inp, log_only=True):
         if not log_only:
@@ -886,7 +894,7 @@ class InputOutput:
                         )
                     else:
                         if self.pretty_assistant:
-                            print("==Expect user input===")
+                            print(self.EXPECT_USER_INPUT)
                         res = input(question)
                 except EOFError:
                     # Treat EOF (Ctrl+D) as if the user pressed Enter
@@ -959,7 +967,7 @@ class InputOutput:
                     )
                 else:
                     if self.pretty_assistant:
-                        print("==Expect user input===")
+                        print(self.EXPECT_USER_INPUT)
                     res = input(question + " ")
             except EOFError:
                 # Treat EOF (Ctrl+D) as if the user pressed Enter
@@ -987,12 +995,16 @@ class InputOutput:
         style = dict(style=color) if self.pretty and color else dict()
         try:
             self.console.print(message, **style)
+            if self.pretty_assistant:
+                print(self.EXPECT_USER_INPUT)
         except UnicodeEncodeError:
             # Fallback to ASCII-safe output
             if isinstance(message, Text):
                 message = message.plain
             message = str(message).encode("ascii", errors="replace").decode("ascii")
             self.console.print(message, **style)
+            if self.pretty_assistant:
+                print(self.EXPECT_USER_INPUT)
 
     def tool_error(self, message="", strip=True):
         self.num_error_outputs += 1
@@ -1019,6 +1031,8 @@ class InputOutput:
 
         style = RichStyle(**style)
         self.console.print(*messages, style=style)
+        if self.pretty_assistant:
+            print(self.EXPECT_USER_INPUT)
 
     def get_assistant_mdstream(self):
         mdargs = dict(
@@ -1051,6 +1065,8 @@ class InputOutput:
 
         # Force a visible re-render and flush, in case the console was buffering output
         self.console.print(show_resp)
+        if self.pretty_assistant:
+            print(self.EXPECT_USER_INPUT)
         self.console.file.flush()
 
     def set_placeholder(self, placeholder):
