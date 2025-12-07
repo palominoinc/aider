@@ -402,8 +402,6 @@ class InputOutput:
                         "[bold red]Warning:[/bold red] Invalid configuration for"
                         f" {attr_name}: '{color_value}'. {e}. Disabling this color."
                     )
-                    if self.pretty_assistant:
-                        print(self.EXPECT_USER_INPUT)
                     setattr(self, attr_name, None)  # Reset invalid color to None
 
     def _get_style(self):
@@ -782,8 +780,6 @@ class InputOutput:
             style = dict()
 
         self.console.print(Text(inp), **style)
-        if self.pretty_assistant:
-            print(self.EXPECT_USER_INPUT)
 
     def user_input(self, inp, log_only=True):
         if not log_only:
@@ -995,16 +991,12 @@ class InputOutput:
         style = dict(style=color) if self.pretty and color else dict()
         try:
             self.console.print(message, **style)
-            if self.pretty_assistant:
-                print(self.EXPECT_USER_INPUT)
         except UnicodeEncodeError:
             # Fallback to ASCII-safe output
             if isinstance(message, Text):
                 message = message.plain
             message = str(message).encode("ascii", errors="replace").decode("ascii")
             self.console.print(message, **style)
-            if self.pretty_assistant:
-                print(self.EXPECT_USER_INPUT)
 
     def tool_error(self, message="", strip=True):
         self.num_error_outputs += 1
@@ -1031,8 +1023,6 @@ class InputOutput:
 
         style = RichStyle(**style)
         self.console.print(*messages, style=style)
-        if self.pretty_assistant:
-            print(self.EXPECT_USER_INPUT)
 
     def get_assistant_mdstream(self):
         mdargs = dict(
@@ -1065,8 +1055,6 @@ class InputOutput:
 
         # Force a visible re-render and flush, in case the console was buffering output
         self.console.print(show_resp)
-        if self.pretty_assistant:
-            print(self.EXPECT_USER_INPUT)
         self.console.file.flush()
 
     def set_placeholder(self, placeholder):
