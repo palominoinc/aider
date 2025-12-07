@@ -880,17 +880,20 @@ class InputOutput:
             res = group.preference
             self.user_input(f"{question}{res}", log_only=False)
         else:
-            if self.pretty_assistant:
-                print(self.EXPECT_USER_INPUT)
             while True:
                 try:
                     if self.prompt_session:
+                        prompt_text = question
+                        if self.pretty_assistant:
+                            prompt_text = question + "\n" + self.EXPECT_USER_INPUT + "\n"
                         res = self.prompt_session.prompt(
-                            question,
+                            prompt_text,
                             style=style,
                             complete_while_typing=False,
                         )
                     else:
+                        if self.pretty_assistant:
+                            print(self.EXPECT_USER_INPUT)
                         res = input(question)
                 except EOFError:
                     # Treat EOF (Ctrl+D) as if the user pressed Enter
@@ -953,17 +956,20 @@ class InputOutput:
         elif self.yes is False:
             res = "no"
         else:
-            if self.pretty_assistant:
-                print(self.EXPECT_USER_INPUT)
             try:
                 if self.prompt_session:
+                    prompt_text = question + " "
+                    if self.pretty_assistant:
+                        prompt_text = question + " \n" + self.EXPECT_USER_INPUT + "\n"
                     res = self.prompt_session.prompt(
-                        question + " ",
+                        prompt_text,
                         default=default,
                         style=style,
                         complete_while_typing=True,
                     )
                 else:
+                    if self.pretty_assistant:
+                        print(self.EXPECT_USER_INPUT)
                     res = input(question + " ")
             except EOFError:
                 # Treat EOF (Ctrl+D) as if the user pressed Enter
