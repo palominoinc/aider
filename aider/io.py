@@ -640,11 +640,12 @@ class InputOutput:
                 # In normal mode, Alt+Enter adds a newline
                 event.current_buffer.insert_text("\n")
 
-        if self.pretty_assistant:
-            print(self.EXPECT_USER_INPUT)
         while True:
             if multiline_input:
                 show = self.prompt_prefix
+
+            if self.pretty_assistant:
+                show = show + "\n" + self.EXPECT_USER_INPUT + "\n"
 
             try:
                 if self.prompt_session:
@@ -893,7 +894,7 @@ class InputOutput:
                         )
                     else:
                         if self.pretty_assistant:
-                            print(self.EXPECT_USER_INPUT)
+                            question = question + "\n" + self.EXPECT_USER_INPUT + "\n"
                         res = input(question)
                 except EOFError:
                     # Treat EOF (Ctrl+D) as if the user pressed Enter
