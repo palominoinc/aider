@@ -21,3 +21,7 @@ tmp.benchmarks/
 venv
 aider_debug.log
 storage/
+lib
+lib64
+bin
+
