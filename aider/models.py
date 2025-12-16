@@ -974,11 +974,11 @@ class Model(ModelSettings):
                 print(f"[DEBUG] functions count: {len(functions)}")
             print(f"[DEBUG] supports_function_calling: {self.info.get('supports_function_calling', True)}")
 
-        if functions is not None and self.info.get("supports_function_calling", True):
+        if functions is not None and len(functions) > 0 and self.info.get("supports_function_calling", True):
             # Check if this is ask mode by looking at function list contents
             # Ask mode will have only MCP tools (all start with "mcp_")
             # Coding modes have native functions (don't start with "mcp_")
-            is_ask_mode = len(functions) > 0 and all(
+            is_ask_mode = all(
                 f.get("name", "").startswith("mcp_") for f in functions
             )
 
