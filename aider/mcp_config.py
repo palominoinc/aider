@@ -119,3 +119,35 @@ class MCPConfig:
 
     def __repr__(self):
         return f"MCPConfig(servers={list(self.servers.keys())})"
+
+    def format_for_debug(self, config_file: Optional[str] = None) -> str:
+        """Format loaded configuration for debug output.
+
+        Args:
+            config_file: Optional file path to include in output
+
+        Returns:
+            Formatted string with config details
+        """
+        lines = []
+
+        if config_file:
+            lines.append(f"Config file: {Path(config_file).resolve()}")
+
+        if self.servers:
+            lines.append(f"Servers loaded: {len(self.servers)}")
+            for name, config in self.servers.items():
+                lines.append(f"  • {name}")
+                lines.append(f"    command: {config.command}")
+                if config.args:
+                    args_str = " ".join(str(a) for a in config.args)
+                    # Truncate very long arg strings
+                    if len(args_str) > 100:
+                        args_str = args_str[:97] + "..."
+                    lines.append(f"    args: {args_str}")
+                if config.env:
+                    lines.append(f"    env vars: {', '.join(config.env.keys())}")
+        else:
+            lines.append("No servers configured")
+
+        return "\n".join(lines)

@@ -985,7 +985,12 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
                 if default_config.exists():
                     mcp_config_file = str(default_config)
                     if args.verbose:
-                        io.tool_output(f"Using MCP config: {mcp_config_file}")
+                        abs_path = Path(mcp_config_file).resolve()
+                        io.tool_output(f"MCP config auto-detected: {abs_path}")
+            else:
+                if args.verbose:
+                    abs_path = Path(mcp_config_file).resolve()
+                    io.tool_output(f"MCP config (from --mcp-config): {abs_path}")
 
             mcp_service = MCPService(
                 io=io,
@@ -999,7 +1004,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             if args.verbose:
                 connected = len(mcp_service.get_connected_servers())
                 total_tools = len(mcp_service.tools)
-                io.tool_output(f"MCP: Connected to {connected} server(s), {total_tools} tool(s) available")
+                io.tool_output("MCP Initialization Complete:")
+                io.tool_output(f"  Servers connected: {connected}")
+                io.tool_output(f"  Tools available: {total_tools}")
 
             # Register cleanup handler
             atexit.register(lambda: mcp_service.shutdown() if mcp_service else None)

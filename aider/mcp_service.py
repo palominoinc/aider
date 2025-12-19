@@ -31,6 +31,21 @@ class MCPService:
         except Exception as e:
             raise ValueError(f"Failed to load MCP configuration: {e}")
 
+        # Show configuration details in verbose mode
+        if self.verbose:
+            if config_file:
+                debug_output = self.config.format_for_debug(config_file)
+                self.io.tool_output("MCP Configuration:")
+                for line in debug_output.split("\n"):
+                    self.io.tool_output(f"  {line}")
+
+            if cli_servers:
+                self.io.tool_output(f"MCP CLI Servers: {len(cli_servers)}")
+                for server_str in cli_servers:
+                    # Extract just the server name for cleaner output
+                    name = server_str.split("=")[0].strip() if "=" in server_str else server_str
+                    self.io.tool_output(f"  • {name}")
+
     def start_servers(self):
         """Connect to all configured MCP servers."""
         if not self.config.servers:
