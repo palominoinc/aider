@@ -483,7 +483,7 @@ tree-sitter-embedded-template==0.23.2
     # via
     #   -c requirements/common-constraints.txt
     #   tree-sitter-language-pack
-tree-sitter-language-pack==0.6.0
+tree-sitter-language-pack==0.6.1
     # via
     #   -c requirements/common-constraints.txt
     #   grep-ast
