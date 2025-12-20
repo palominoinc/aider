@@ -974,7 +974,7 @@ class Model(ModelSettings):
                 print(f"[DEBUG] functions count: {len(functions)}")
             print(f"[DEBUG] supports_function_calling: {self.info.get('supports_function_calling', True)}")
 
-        if functions is not None and len(functions) > 0 and self.info.get("supports_function_calling", True):
+        if functions is not None and len(functions) > 0:
             # Check if this is ask mode by looking at function list contents
             # Ask mode will have only MCP tools (all start with "mcp_")
             # Coding modes have native functions (don't start with "mcp_")
@@ -1003,7 +1003,7 @@ class Model(ModelSettings):
                 if self.verbose:
                     print(f"[DEBUG] Added 1 coding tool to kwargs")
         elif self.verbose:
-            print(f"[DEBUG] Skipping tools - either functions is None or model doesn't support function calling")
+            print(f"[DEBUG] Skipping tools - functions is None or empty")
         if self.extra_params:
             kwargs.update(self.extra_params)
         if self.is_ollama() and "num_ctx" not in kwargs:
