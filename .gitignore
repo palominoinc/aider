@@ -15,8 +15,7 @@ aider/_version.py
 .venv/
 .#*
 .gitattributes
-tmp.benchmarks/bin
 lib
 lib64
 bin
-
+.docker_bash_history
