@@ -15,4 +15,6 @@ aider/_version.py
 .venv/
 .#*
 .gitattributes
-tmp.benchmarks/
+tmp.benchmarks/bin
+lib
+lib64
