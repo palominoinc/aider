@@ -703,20 +703,26 @@ class RepoMap:
             if not code.endswith("\n"):
                 code += "\n"
 
-            context = TreeContext(
-                rel_fname,
-                code,
-                color=False,
-                line_number=False,
-                child_context=False,
-                last_line=False,
-                margin=0,
-                mark_lois=False,
-                loi_pad=0,
-                # header_max=30,
-                show_top_of_file_parent_scope=False,
-            )
-            self.tree_context_cache[rel_fname] = {"context": context, "mtime": mtime}
+            try:
+                context = TreeContext(
+                    rel_fname,
+                    code,
+                    color=False,
+                    line_number=False,
+                    child_context=False,
+                    last_line=False,
+                    margin=0,
+                    mark_lois=False,
+                    loi_pad=0,
+                    # header_max=30,
+                    show_top_of_file_parent_scope=False,
+                )
+                self.tree_context_cache[rel_fname] = {"context": context, "mtime": mtime}
+            except LookupError as e:
+                # Language bindings not available, skip this file
+                if self.verbose:
+                    self.io.tool_warning(f"Skipping {rel_fname}: {e}")
+                return ""
 
         context = self.tree_context_cache[rel_fname]["context"]
         context.lines_of_interest = set()
