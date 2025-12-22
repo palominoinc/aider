@@ -288,7 +288,7 @@ class RepoMap:
 
         # Run the tags queries
         query = language.query(query_scm)
-        cursor = QueryCursor()
+        cursor = QueryCursor(query)
         captures = cursor.captures(tree.root_node)
 
         saw = set()
