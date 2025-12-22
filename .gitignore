@@ -21,3 +21,4 @@ venv
 lib
 lib64
 bin
+pyvenv.cfg
