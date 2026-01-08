@@ -227,6 +227,10 @@ litellm==1.80.10
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
+mcp>=1.22.0
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 markdown-it-py==4.0.0
     # via
     #   -c requirements/common-constraints.txt
