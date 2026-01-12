@@ -228,6 +228,7 @@ class AutoCompleter(Completer):
 
 
 class InputOutput:
+    EXPECT_USER_INPUT = "==Expect user input==="
     num_error_outputs = 0
     num_user_asks = 0
     clipboard_watcher = None
@@ -359,7 +360,10 @@ class InputOutput:
                 session_kwargs["history"] = FileHistory(self.input_history_file)
             try:
                 self.prompt_session = PromptSession(**session_kwargs)
-                self.console = Console()  # pretty console
+                if self.pretty_assistant:
+                    self.console = Console(force_terminal=False, no_color=True)
+                else:
+                    self.console = Console()  # pretty console
             except Exception as err:
                 self.console = Console(force_terminal=False, no_color=True)
                 self.tool_error(f"Can't initialize prompt toolkit: {err}")  # non-pretty
@@ -636,11 +640,12 @@ class InputOutput:
                 # In normal mode, Alt+Enter adds a newline
                 event.current_buffer.insert_text("\n")
 
-        if self.pretty_assistant:
-            print("==Expect user input===")
         while True:
             if multiline_input:
                 show = self.prompt_prefix
+
+            if self.pretty_assistant:
+                show = show + "\n" + self.EXPECT_USER_INPUT + "\n"
 
             try:
                 if self.prompt_session:
@@ -879,14 +884,17 @@ class InputOutput:
             while True:
                 try:
                     if self.prompt_session:
+                        prompt_text = question
+                        if self.pretty_assistant:
+                            prompt_text = question + "\n" + self.EXPECT_USER_INPUT + "\n"
                         res = self.prompt_session.prompt(
-                            question,
+                            prompt_text,
                             style=style,
                             complete_while_typing=False,
                         )
                     else:
                         if self.pretty_assistant:
-                            print("==Expect user input===")
+                            question = question + "\n" + self.EXPECT_USER_INPUT + "\n"
                         res = input(question)
                 except EOFError:
                     # Treat EOF (Ctrl+D) as if the user pressed Enter
@@ -951,15 +959,18 @@ class InputOutput:
         else:
             try:
                 if self.prompt_session:
+                    prompt_text = question + " "
+                    if self.pretty_assistant:
+                        prompt_text = question + " \n" + self.EXPECT_USER_INPUT + "\n"
                     res = self.prompt_session.prompt(
-                        question + " ",
+                        prompt_text,
                         default=default,
                         style=style,
                         complete_while_typing=True,
                     )
                 else:
                     if self.pretty_assistant:
-                        print("==Expect user input===")
+                        print(self.EXPECT_USER_INPUT)
                     res = input(question + " ")
             except EOFError:
                 # Treat EOF (Ctrl+D) as if the user pressed Enter
@@ -1050,7 +1061,7 @@ class InputOutput:
             show_resp = Text(str(message) or "(empty response)")
 
         # Force a visible re-render and flush, in case the console was buffering output
-        self.console.print(show_resp, flush=True)
+        self.console.print(show_resp)
         self.console.file.flush()
 
     def set_placeholder(self, placeholder):

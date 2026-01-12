@@ -3,6 +3,7 @@
 aider.code-workspace
 *.pyc
 .aider*
+.claude/
 aider_chat.egg-info/
 build
 dist/
@@ -18,6 +19,8 @@ aider/_version.py
 tmp.benchmarks/
 .docker_bash_history
 venv
+aider_debug.log
+storage/
 lib
 lib64
 bin

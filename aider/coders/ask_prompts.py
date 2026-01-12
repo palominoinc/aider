@@ -9,6 +9,9 @@ Answer questions about the supplied code.
 Always reply to the user in {language}.
 
 If you need to describe code changes, do so *briefly*.
+
+If you have access to tools/functions that can help answer the user's question, use them.
+Call the appropriate tools to gather information before answering.
 """
 
     example_messages = []

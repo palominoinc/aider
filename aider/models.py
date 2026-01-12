@@ -968,10 +968,42 @@ class Model(ModelSettings):
 
             kwargs["temperature"] = temperature
 
-        if functions is not None:
-            function = functions[0]
-            kwargs["tools"] = [dict(type="function", function=function)]
-            kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+        if self.verbose:
+            print(f"\n[DEBUG] functions is None: {functions is None}")
+            if functions is not None:
+                print(f"[DEBUG] functions count: {len(functions)}")
+            print(f"[DEBUG] supports_function_calling: {self.info.get('supports_function_calling', True)}")
+
+        if functions is not None and len(functions) > 0:
+            # Check if this is ask mode by looking at function list contents
+            # Ask mode will have only MCP tools (all start with "mcp_")
+            # Coding modes have native functions (don't start with "mcp_")
+            is_ask_mode = all(
+                f.get("name", "").startswith("mcp_") for f in functions
+            )
+
+            if self.verbose:
+                print(f"[DEBUG] is_ask_mode: {is_ask_mode}")
+
+            if is_ask_mode:
+                # Ask mode: Send all MCP tools, let LLM choose freely
+                kwargs["tools"] = [dict(type="function", function=f) for f in functions]
+                # Only set tool_choice if model supports it
+                if self.info.get("supports_tool_choice", True):
+                    kwargs["tool_choice"] = "auto"
+                if self.verbose:
+                    print(f"[DEBUG] Added {len(functions)} MCP tools to kwargs")
+            else:
+                # Coding mode: Force native function (existing behavior)
+                function = functions[0]
+                kwargs["tools"] = [dict(type="function", function=function)]
+                # Only set tool_choice if model supports it
+                if self.info.get("supports_tool_choice", True):
+                    kwargs["tool_choice"] = {"type": "function", "function": {"name": function["name"]}}
+                if self.verbose:
+                    print(f"[DEBUG] Added 1 coding tool to kwargs")
+        elif self.verbose:
+            print(f"[DEBUG] Skipping tools - functions is None or empty")
         if self.extra_params:
             kwargs.update(self.extra_params)
         if self.is_ollama() and "num_ctx" not in kwargs:
@@ -979,13 +1011,13 @@ class Model(ModelSettings):
             kwargs["num_ctx"] = num_ctx
         key = json.dumps(kwargs, sort_keys=True).encode()
 
-        # dump(kwargs)
+        if self.verbose:
+            print("\n▶▶▶ [models.py:998] BEFORE adding messages/timeout ▶▶▶")
+            dump(kwargs)
 
         hash_object = hashlib.sha1(key)
         if "timeout" not in kwargs:
             kwargs["timeout"] = request_timeout
-        if self.verbose:
-            dump(kwargs)
         kwargs["messages"] = messages
 
         # Are we using github copilot?
@@ -998,8 +1030,75 @@ class Model(ModelSettings):
 
             self.github_copilot_token_to_open_ai_key(kwargs["extra_headers"])
 
-        res = litellm.completion(**kwargs)
-        return hash_object, res
+        if self.verbose:
+            print("\n▶▶▶ [models.py:1017] FINAL PAYLOAD - Right before litellm.completion() ▶▶▶")
+            print("\n=== Full API Payload ===")
+            print(f"Model: {kwargs.get('model')}")
+            print(f"Stream: {kwargs.get('stream')}")
+            print(f"Temperature: {kwargs.get('temperature')}")
+            print(f"Timeout: {kwargs.get('timeout')}")
+
+            if 'tools' in kwargs:
+                print(f"\nTools ({len(kwargs['tools'])} total):")
+                for i, tool in enumerate(kwargs['tools']):
+                    func = tool.get('function', {})
+                    print(f"  {i+1}. {func.get('name')}")
+
+            if 'tool_choice' in kwargs:
+                print(f"\nTool Choice: {kwargs['tool_choice']}")
+
+            if 'messages' in kwargs:
+                print(f"\nMessages ({len(kwargs['messages'])} total):")
+                for i, msg in enumerate(kwargs['messages']):
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    content_preview = content[:100] if isinstance(content, str) else str(content)[:100]
+                    print(f"  {i+1}. {role}: {content_preview}...")
+
+            if self.extra_params:
+                print(f"\nExtra params: {json.dumps(self.extra_params, indent=2)}")
+
+            # Try to dump the full raw payload as JSON
+            try:
+                payload_copy = dict(kwargs)
+                # Truncate messages content for the raw dump to avoid huge output
+                if 'messages' in payload_copy:
+                    payload_copy['messages'] = f"<{len(kwargs['messages'])} messages - see above>"
+                print(f"\nRaw kwargs dict:\n{json.dumps(payload_copy, indent=2, default=str)}")
+            except Exception as e:
+                print(f"\nCouldn't serialize full payload: {e}")
+
+            print("=== End Payload ===\n")
+
+        try:
+            res = litellm.completion(**kwargs)
+
+            if self.verbose:
+                print("\n▶▶▶ [models.py] Response received ▶▶▶")
+                print(f"Response type: {type(res)}")
+                print(f"Has choices: {hasattr(res, 'choices')}")
+                if hasattr(res, 'choices'):
+                    print(f"Number of choices: {len(res.choices) if res.choices else 0}")
+                if hasattr(res, '_hidden_params'):
+                    print(f"Hidden params: {res._hidden_params}")
+                if hasattr(res, 'headers'):
+                    print(f"Response headers: {res.headers}")
+                if hasattr(res, '_response_ms'):
+                    print(f"Response time: {res._response_ms}ms")
+
+            return hash_object, res
+        except Exception as e:
+            if self.verbose:
+                print(f"\n▶▶▶ [models.py] Exception during completion ▶▶▶")
+                print(f"Exception type: {type(e).__name__}")
+                print(f"Exception message: {str(e)}")
+                if hasattr(e, 'response'):
+                    print(f"Response object: {e.response}")
+                    if hasattr(e.response, 'headers'):
+                        print(f"Response headers: {dict(e.response.headers)}")
+                    if hasattr(e.response, 'text'):
+                        print(f"Response text: {e.response.text[:500]}")
+            raise
 
     def simple_send_with_retries(self, messages):
         from aider.exceptions import LiteLLMExceptions
@@ -1010,6 +1109,7 @@ class Model(ModelSettings):
         retry_delay = 0.125
 
         if self.verbose:
+            print("\n▶▶▶ [models.py:1068] simple_send_with_retries - messages only ▶▶▶")
             dump(messages)
 
         while True:

@@ -970,6 +970,54 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     # Track auto-commits configuration
     analytics.event("auto_commits", enabled=bool(args.auto_commits))
 
+    # Initialize MCP service if enabled
+    mcp_service = None
+    if args.enable_mcp:
+        try:
+            from aider.mcp_service import MCPService
+            import atexit
+
+            # Auto-detect config file if not specified
+            mcp_config_file = args.mcp_config
+            if not mcp_config_file:
+                # Check for .aider.mcp.yml in current directory
+                default_config = Path(".aider.mcp.yml")
+                if default_config.exists():
+                    mcp_config_file = str(default_config)
+                    if args.verbose:
+                        abs_path = Path(mcp_config_file).resolve()
+                        io.tool_output(f"MCP config auto-detected: {abs_path}")
+            else:
+                if args.verbose:
+                    abs_path = Path(mcp_config_file).resolve()
+                    io.tool_output(f"MCP config (from --mcp-config): {abs_path}")
+
+            mcp_service = MCPService(
+                io=io,
+                config_file=mcp_config_file,
+                cli_servers=args.mcp_servers if args.mcp_servers else None,
+                verbose=args.verbose,
+            )
+            mcp_service.start_servers()
+            mcp_service.discover_tools()
+
+            if args.verbose:
+                connected = len(mcp_service.get_connected_servers())
+                total_tools = len(mcp_service.tools)
+                io.tool_output("MCP Initialization Complete:")
+                io.tool_output(f"  Servers connected: {connected}")
+                io.tool_output(f"  Tools available: {total_tools}")
+
+            # Register cleanup handler
+            atexit.register(lambda: mcp_service.shutdown() if mcp_service else None)
+
+        except Exception as e:
+            io.tool_error(f"Failed to initialize MCP: {e}")
+            if not io.confirm_ask("Continue without MCP?"):
+                analytics.event("exit", reason="MCP initialization failed")
+                return 1
+            mcp_service = None
+
     try:
         coder = Coder.create(
             main_model=main_model,
@@ -1005,6 +1053,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             auto_copy_context=args.copy_paste,
             auto_accept_architect=args.auto_accept_architect,
             add_gitignore_files=args.add_gitignore_files,
+            mcp_service=mcp_service,
         )
     except UnknownEditFormat as err:
         io.tool_error(str(err))

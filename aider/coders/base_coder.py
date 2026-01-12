@@ -338,9 +338,14 @@ class Coder:
         file_watcher=None,
         auto_copy_context=False,
         auto_accept_architect=True,
+        mcp_service=None,
     ):
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
+
+        # Store MCP service
+        self.mcp_service = mcp_service
+        self.mcp_enabled = True if mcp_service else False
 
         self.event = self.analytics.event
         self.chat_language = chat_language
@@ -541,6 +546,28 @@ class Coder:
                 self.io.tool_output("JSON Schema:")
                 self.io.tool_output(json.dumps(self.functions, indent=4))
 
+        # Augment with MCP tools if MCP service is available and enabled
+        # Only add to AskCoder (edit_format == "ask")
+        if self.mcp_service and self.mcp_enabled and self.functions is not None and self.edit_format == "ask":
+            mcp_tool_schemas = self.mcp_service.get_tool_schemas()
+            if self.verbose:
+                self.io.tool_output(f"MCP service has {len(mcp_tool_schemas)} tool schemas")
+                self.io.tool_output(f"Current functions list has {len(self.functions)} items")
+
+            if mcp_tool_schemas:
+                # Deduplicate: only add tools that aren't already in functions
+                existing_names = {f.get("name") for f in self.functions}
+                new_tools = [t for t in mcp_tool_schemas if t.get("name") not in existing_names]
+
+                if new_tools:
+                    self.functions.extend(new_tools)
+                    if self.verbose:
+                        self.io.tool_output(f"Added {len(new_tools)} MCP tool(s), total now: {len(self.functions)}")
+                elif self.verbose:
+                    self.io.tool_output(f"MCP tools already present, skipping ({len(existing_names)} existing)")
+        elif self.mcp_service and self.verbose and self.edit_format == "ask":
+            self.io.tool_output("MCP tools available but no tools discovered")
+
     def setup_lint_cmds(self, lint_cmds):
         if not lint_cmds:
             return
@@ -672,7 +699,9 @@ class Coder:
     def get_cur_message_text(self):
         text = ""
         for msg in self.cur_messages:
-            text += msg["content"] + "\n"
+            content = msg.get("content")
+            if content:
+                text += content + "\n"
         return text
 
     def get_ident_mentions(self, text):
@@ -1229,6 +1258,24 @@ class Coder:
         if self.main_model.system_prompt_prefix:
             main_sys = self.main_model.system_prompt_prefix + "\n" + main_sys
 
+        # Add WebPal context if MCP is enabled and we're in ask mode
+        if self.mcp_service and self.mcp_enabled and self.edit_format == "ask":
+            webpal_context = """
+
+## WebPal Document Management System
+
+You have authenticated access to WebPal, a document management system and CMS.
+Use the webpal tools (mcp_webpal_*) when users ask about documents, files, folders, or content management.
+
+WebPal terminology:
+- "documents" and "files" are synonymous
+- "folders" and "directories" are synonymous
+- Paths use "/" separator (e.g., "/folder/subfolder")
+
+When users mention webpal, documents, or content management, use the available webpal tools to query the system rather than searching the code repository.
+"""
+            main_sys += webpal_context
+
         example_messages = []
         if self.main_model.examples_as_sys_msg:
             if self.gpt_prompts.example_messages:
@@ -1456,6 +1503,8 @@ class Coder:
         try:
             while True:
                 try:
+                    if self.verbose and self.functions:
+                        self.io.tool_output(f"Calling send() with {len(self.functions)} functions")
                     yield from self.send(messages, functions=self.functions)
                     break
                 except litellm_ex.exceptions_tuple() as err:
@@ -1584,7 +1633,59 @@ class Coder:
 
         edited = self.apply_updates()
 
-        if edited:
+        if self.verbose:
+            self.io.tool_output(f"[DEBUG] apply_updates returned: {repr(edited)}")
+
+        # Loop to handle multiple tool calls in sequence
+        max_tool_iterations = 10  # Prevent infinite loops
+        tool_iteration = 0
+
+        while edited == "MCP_TOOL_EXECUTED" and tool_iteration < max_tool_iterations:
+            tool_iteration += 1
+
+            if self.verbose:
+                self.io.tool_output(f"Sending tool result back to LLM... (iteration {tool_iteration})")
+                self.io.tool_output(f"About to call LLM again after tool execution, functions list has {len(self.functions)} items")
+                self.io.tool_output(f"Current messages count: {len(self.cur_messages)}")
+                # Show last 2 messages (tool call and result)
+                if len(self.cur_messages) >= 2:
+                    self.io.tool_output(f"Last message roles: {[m.get('role') for m in self.cur_messages[-2:]]}")
+
+            # Don't add a new user message, just call send() again with updated messages
+            chunks = self.format_messages()
+            messages = chunks.all_messages()
+            if not self.check_tokens(messages):
+                self.io.tool_warning("Token limit exceeded, cannot send tool result back to LLM")
+                break
+
+            if self.verbose:
+                self.io.tool_output(f"Calling LLM with {len(messages)} messages including tool result...")
+
+            yield from self.send(messages, functions=self.functions)
+
+            # Now apply_updates again for the LLM's response to tool result
+            if self.verbose:
+                self.io.tool_output("Processing LLM's response to tool result...")
+
+            # Display the LLM's response content after tool execution
+            if self.partial_response_content:
+                if self.verbose:
+                    self.io.tool_output(f"\nLLM's response after tool execution:")
+                self.io.assistant_output(self.partial_response_content)
+
+            edited = self.apply_updates()
+
+            if self.verbose:
+                self.io.tool_output(f"[DEBUG] apply_updates returned: {repr(edited)}")
+                if edited and edited != "MCP_TOOL_EXECUTED":
+                    self.io.tool_output("LLM provided final response")
+                elif not edited:
+                    self.io.tool_output("LLM response processing completed")
+
+        if tool_iteration >= max_tool_iterations:
+            self.io.tool_warning(f"Maximum tool iterations ({max_tool_iterations}) reached, stopping.")
+
+        if edited and edited != "MCP_TOOL_EXECUTED":
             self.aider_edited_files.update(edited)
             saved_message = self.auto_commit(edited)
 
@@ -1596,7 +1697,7 @@ class Coder:
         if self.reflected_message:
             return
 
-        if edited and self.auto_lint:
+        if edited and edited != "MCP_TOOL_EXECUTED" and self.auto_lint:
             lint_errors = self.lint_edited(edited)
             self.auto_commit(edited, context="Ran the linter")
             self.lint_outcome = not lint_errors
@@ -1613,7 +1714,7 @@ class Coder:
                 dict(role="assistant", content="Ok"),
             ]
 
-        if edited and self.auto_test:
+        if edited and edited != "MCP_TOOL_EXECUTED" and self.auto_test:
             test_errors = self.commands.cmd_test(self.test_cmd)
             self.test_outcome = not test_errors
             if test_errors:
@@ -1899,8 +2000,45 @@ class Coder:
 
     def show_send_output_stream(self, completion):
         received_content = False
+        chunk_count = 0
+
+        if self.verbose:
+            print(f"\n[DEBUG base_coder.py:1940] Starting to process streaming completion")
+            print(f"[DEBUG] Completion type: {type(completion)}")
 
         for chunk in completion:
+            chunk_count += 1
+            if self.verbose and chunk_count <= 5:
+                print(f"\n[DEBUG] Chunk #{chunk_count}:")
+                print(f"  Type: {type(chunk)}")
+                print(f"  Has choices: {hasattr(chunk, 'choices')}")
+                if hasattr(chunk, 'choices'):
+                    print(f"  Num choices: {len(chunk.choices)}")
+                    if len(chunk.choices) > 0:
+                        choice = chunk.choices[0]
+                        print(f"  Choice 0 has delta: {hasattr(choice, 'delta')}")
+
+                        # Show finish_reason if present
+                        if hasattr(choice, 'finish_reason'):
+                            print(f"  Finish reason: {choice.finish_reason}")
+
+                        if hasattr(choice, 'delta'):
+                            delta = choice.delta
+                            print(f"  Delta attributes: {dir(delta)}")
+
+                            # Check and show actual VALUES
+                            if hasattr(delta, 'content'):
+                                content_val = getattr(delta, 'content', None)
+                                print(f"  Delta.content VALUE: {repr(content_val)}")
+
+                            if hasattr(delta, 'tool_calls'):
+                                tool_calls_val = getattr(delta, 'tool_calls', None)
+                                print(f"  Delta.tool_calls VALUE: {repr(tool_calls_val)}")
+
+                            if hasattr(delta, 'function_call'):
+                                func_call_val = getattr(delta, 'function_call', None)
+                                print(f"  Delta.function_call VALUE: {repr(func_call_val)}")
+
             if len(chunk.choices) == 0:
                 continue
 
@@ -1919,6 +2057,33 @@ class Coder:
                     else:
                         self.partial_response_function_call[k] = v
                 received_content = True
+            except AttributeError:
+                pass
+
+            # Handle tool_calls (newer OpenAI format)
+            try:
+                tool_calls = chunk.choices[0].delta.tool_calls
+                if tool_calls:
+                    for tool_call in tool_calls:
+                        if self.verbose and chunk_count <= 5:
+                            print(f"  [DEBUG] Processing tool_call: {tool_call}")
+
+                        # Extract function name and arguments
+                        if hasattr(tool_call, 'function'):
+                            func = tool_call.function
+                            if hasattr(func, 'name') and func.name:
+                                if 'name' not in self.partial_response_function_call:
+                                    self.partial_response_function_call['name'] = func.name
+                                else:
+                                    self.partial_response_function_call['name'] += func.name
+
+                            if hasattr(func, 'arguments') and func.arguments:
+                                if 'arguments' not in self.partial_response_function_call:
+                                    self.partial_response_function_call['arguments'] = func.arguments
+                                else:
+                                    self.partial_response_function_call['arguments'] += func.arguments
+
+                            received_content = True
             except AttributeError:
                 pass
 
@@ -1970,15 +2135,30 @@ class Coder:
                     sys.stdout.write(safe_text)
                 sys.stdout.flush()
                 yield text
+            elif chunk_count <= 5 and self.verbose:
+                # Debug: why isn't text being displayed?
+                print(f"  [DEBUG] Not displaying - show_pretty={self.show_pretty()}, text_empty={not text}")
+
+        if self.verbose:
+            print(f"\n[DEBUG base_coder.py:2030] Finished processing stream")
+            print(f"  Total chunks: {chunk_count}")
+            print(f"  Received content: {received_content}")
+            print(f"  Partial response content length: {len(self.partial_response_content)}")
+            print(f"  Partial response function call: {self.partial_response_function_call}")
+            if self.partial_response_content:
+                print(f"  Response preview: {self.partial_response_content[:200]}...")
 
         if not received_content:
+            if self.verbose:
+                print(f"[DEBUG] No content received - showing warning")
             self.io.tool_warning("Empty response received from LLM. Check your provider account?")
 
     def live_incremental_response(self, final):
         show_resp = self.render_incremental_response(final)
         # Apply any reasoning tag formatting
         show_resp = replace_reasoning_tags(show_resp, self.reasoning_tag_name)
-        self.mdstream.update(show_resp, final=final)
+        if self.mdstream:
+            self.mdstream.update(show_resp, final=final)
 
     def render_incremental_response(self, final):
         return self.get_multi_response_content_in_progress()
@@ -2293,7 +2473,96 @@ class Coder:
 
         return res
 
+    def _execute_mcp_tool(self):
+        """Execute an MCP tool call and add result to chat."""
+        import uuid
+
+        tool_name = self.partial_response_function_call.get("name", "")
+        args_str = self.partial_response_function_call.get("arguments", "{}")
+
+        # Parse arguments
+        try:
+            args = json.loads(args_str) if isinstance(args_str, str) else args_str
+        except json.JSONDecodeError as e:
+            self.io.tool_error(f"Invalid MCP tool arguments: {e}")
+            error_result = {"error": f"Invalid arguments: {e}"}
+            self._add_tool_result_to_chat(tool_name, args_str, json.dumps(error_result))
+            # Return special marker even for errors
+            return "MCP_TOOL_EXECUTED"
+
+        if self.verbose:
+            self.io.tool_output(f"Calling MCP tool: {tool_name}")
+            self.io.tool_output(f"Tool arguments: {json.dumps(args, indent=2)}")
+
+        # Execute the tool
+        try:
+            result = self.mcp_service.execute_tool(tool_name, args)
+
+            # Convert result to string if needed
+            if not isinstance(result, str):
+                result_str = json.dumps(result, indent=2)
+            else:
+                result_str = result
+
+            if self.verbose:
+                self.io.tool_output("MCP tool executed successfully")
+
+                # Display the tool result to the user
+                if result_str:
+                    self.io.tool_output(f"Tool result:\n{result_str}")
+
+            # Add tool call and result to conversation
+            self._add_tool_result_to_chat(tool_name, args_str, result_str)
+
+        except Exception as e:
+            self.io.tool_error(f"MCP tool execution failed: {e}")
+            error_result = {"error": str(e)}
+            self._add_tool_result_to_chat(tool_name, args_str, json.dumps(error_result))
+
+        # Return special marker to indicate MCP tool was executed
+        # This signals send_message to continue the loop
+        return "MCP_TOOL_EXECUTED"
+
+    def _add_tool_result_to_chat(self, tool_name, args_str, result_str):
+        """Add tool call and result to conversation messages."""
+        import uuid
+
+        tool_call_id = f"mcp_{uuid.uuid4().hex[:8]}"
+
+        # Add assistant message with tool call
+        self.cur_messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": args_str if isinstance(args_str, str) else json.dumps(args_str)
+                }
+            }]
+        })
+
+        # Add tool result message
+        self.cur_messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": result_str
+        })
+
     def apply_updates(self):
+        # Check if this is an MCP tool call
+        if self.partial_response_function_call and self.mcp_service:
+            tool_name = self.partial_response_function_call.get("name", "")
+            if self.verbose:
+                self.io.tool_output(f"apply_updates: partial_response_function_call name='{tool_name}'")
+            if tool_name.startswith("mcp_"):
+                if self.verbose:
+                    self.io.tool_output(f"Detected MCP tool call: {tool_name}")
+                return self._execute_mcp_tool()
+        elif self.verbose and self.mcp_service:
+            self.io.tool_output("apply_updates: No function call detected")
+
         edited = set()
         try:
             edits = self.get_edits()
@@ -2368,7 +2637,9 @@ class Coder:
         context = ""
         if history:
             for msg in history:
-                context += "\n" + msg["role"].upper() + ": " + msg["content"] + "\n"
+                content = msg.get("content")
+                if content:
+                    context += "\n" + msg["role"].upper() + ": " + content + "\n"
 
         return context
 
