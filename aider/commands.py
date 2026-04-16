@@ -846,7 +846,11 @@ class Commands:
         for matched_file in sorted(all_matched_files):
             abs_file_path = self.coder.abs_root_path(matched_file)
 
-            if not abs_file_path.startswith(self.coder.root) and not is_image_file(matched_file):
+            if (
+                not abs_file_path.startswith(self.coder.root)
+                and not is_image_file(matched_file)
+                and self.coder.auto_commits
+            ):
                 self.io.tool_error(
                     f"Can not add {abs_file_path}, which is not within {self.coder.root}"
                 )
@@ -864,7 +868,13 @@ class Commands:
                 self.io.tool_error(f"{matched_file} is already in the chat as an editable file")
                 continue
             elif abs_file_path in self.coder.abs_read_only_fnames:
-                if self.coder.repo and self.coder.repo.path_in_repo(matched_file):
+                # Determine if file can be promoted to editable
+                if self.coder.repo:
+                    can_edit = self.coder.repo.path_in_repo(matched_file)
+                else:
+                    can_edit = abs_file_path.startswith(self.coder.root)
+
+                if can_edit:
                     self.coder.abs_read_only_fnames.remove(abs_file_path)
                     self.coder.abs_fnames.add(abs_file_path)
                     self.io.tool_output(
@@ -1184,6 +1194,14 @@ class Commands:
     def cmd_context(self, args):
         """Enter context mode to see surrounding code context. If no prompt provided, switches to context mode."""  # noqa
         return self._generic_chat_command(args, "context", placeholder=args.strip() or None)
+
+    def cmd_ok(self, args):
+        "Alias for `/code Ok, please go ahead and make those changes.` (any args are appended)"
+        msg = "Ok, please go ahead and make those changes."
+        extra = (args or "").strip()
+        if extra:
+            msg = f"{msg} {extra}"
+        return self.cmd_code(msg)
 
     def _generic_chat_command(self, args, edit_format, placeholder=None):
         if not args.strip():
