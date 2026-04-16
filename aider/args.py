@@ -320,6 +320,12 @@ def get_parser(default_config_files, git_root):
         help="Enable/disable pretty, colorized output (default: True)",
     )
     group.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce output verbosity to minimum",
+        default=False,
+    )
+    group.add_argument(
         "--stream",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -844,6 +850,12 @@ def get_parser(default_config_files, git_root):
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Enable/disable detection and offering to add URLs to chat (default: True)",
+    )
+    group.add_argument(
+        "--no-welcome",
+        action="store_true",
+        help="Skip the welcome message on startup",
+        default=False,
     )
     group.add_argument(
         "--editor",

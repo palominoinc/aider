@@ -1039,7 +1039,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         analytics.event("copy-paste mode")
         ClipboardWatcher(coder.io, verbose=args.verbose)
 
-    coder.show_announcements()
+    if not args.quiet:
+        coder.show_announcements()
 
     if args.show_prompts:
         coder.cur_messages += [
@@ -1096,29 +1097,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         args.edit_format = main_model.editor_edit_format
         args.message = "/paste"
 
-    if args.show_release_notes is True:
-        io.tool_output(f"Opening release notes: {urls.release_notes}")
-        io.tool_output()
-        webbrowser.open(urls.release_notes)
-    elif args.show_release_notes is None and is_first_run:
-        io.tool_output()
-        io.offer_url(
-            urls.release_notes,
-            "Would you like to see what's new in this version?",
-            allow_never=False,
-        )
-
-    if git_root and Path.cwd().resolve() != Path(git_root).resolve():
-        io.tool_warning(
-            "Note: in-chat filenames are always relative to the git working dir, not the current"
-            " working dir."
-        )
-
-        io.tool_output(f"Cur working dir: {Path.cwd()}")
-        io.tool_output(f"Git working dir: {git_root}")
-
-    if args.stream and args.cache_prompts:
-        io.tool_warning("Cost estimates may be inaccurate when using streaming and caching.")
+    # Suppress all startup messages
+    if not args.no_welcome:
+        io.tool_output("Welcome to WebPal AI.", bold=True)
 
     if args.load:
         commands.cmd_load(args.load)
@@ -1176,7 +1157,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
             coder = Coder.create(**kwargs)
 
-            if switch.kwargs.get("show_announcements") is not False:
+            if switch.kwargs.get("show_announcements") is not False and not args.quiet:
                 coder.show_announcements()
 
 
@@ -1185,9 +1166,8 @@ def is_first_run_of_new_version(io, verbose=False):
     installs_file = Path.home() / ".aider" / "installs.json"
     key = (__version__, sys.executable)
 
-    # Never show notes for .dev versions
-    if ".dev" in __version__:
-        return False
+    # Always return False for our placeholder version
+    return False
 
     if verbose:
         io.tool_output(
